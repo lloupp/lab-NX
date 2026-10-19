@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "actions": [
+    {
+      "name": "move_left",
+      "button": "left",
+      "hold_ms": 2000,
+      "wait_ms": 600
+    },
+    {
+      "name": "move_right",
+      "button": "right",
+      "hold_ms": 3000,
+      "wait_ms": 600
+    },
+    {
+      "name": "test_x_button",
+      "button": "x",
+      "hold_ms": 300,
+      "wait_ms": 800
+    }
+  ]
+}
