@@ -13,6 +13,7 @@ on:
       - feat/castle-crashers-m1
       - feat/castle-crashers-m2
       - feat/automated-m2-pipeline
+      - feat/reusable-recipe-supervisor
 jobs:
   tests:
     runs-on: ubuntu-latest
