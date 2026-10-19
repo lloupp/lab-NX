@@ -5,9 +5,11 @@ on:
     branches: [feat/goldeneye-ptbr-localization]
     paths:
       - 'nxlab/native/goldeneye_rom_runtime.*'
+      - 'nxlab/native/goldeneye_rom_sprite.*'
       - 'nxlab/native/goldeneye_switch_*'
       - 'nxlab/switch_loader/**'
       - 'tests/native/test_goldeneye_rom_runtime.c'
+      - 'tests/native/test_goldeneye_rom_sprite.c'
       - '.github/workflows/goldeneye-engine-path.yml'
   pull_request:
     paths:
@@ -32,6 +34,11 @@ jobs:
             tests/native/test_goldeneye_rom_runtime.c \
             -o /tmp/ge_rom_test
           /tmp/ge_rom_test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -I nxlab/native nxlab/native/goldeneye_rom_sprite.c \
+            tests/native/test_goldeneye_rom_sprite.c \
+            -o /tmp/ge_sprite_test
+          /tmp/ge_sprite_test
           echo "The real US ROM was separately validated in private local tests."
 
   switch-nro-build:
@@ -47,10 +54,10 @@ jobs:
             devkitpro/devkita64:latest make -j2
           test -s nxlab/switch_loader/goldeneye-nx-loader.nro
           file nxlab/switch_loader/goldeneye-nx-loader.nro
-      - name: Upload ROM-free ARM64 diagnostic loader NRO
+      - name: Upload ROM-free ARM64 original-asset display NRO
         uses: actions/upload-artifact@v4
         with:
-          name: goldeneye-nx-rom-loader-nro
+          name: goldeneye-nx-first-pixels-nro
           path: nxlab/switch_loader/goldeneye-nx-loader.nro
           if-no-files-found: error
 
