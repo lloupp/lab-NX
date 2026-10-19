@@ -67,20 +67,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence eden-home
-          CLI="$(find squashfs-root -type f -name eden-cli -print -quit)"
-          if [ -z "$CLI" ]; then
-            echo "BLOCKED: Eden AppImage does not contain eden-cli" | tee evidence/result.txt
-            exit 0
+          find squashfs-root -maxdepth 3 -name '*eden*' -print > evidence/appimage-binaries.txt
+          CLI="$(find squashfs-root -name eden-cli -print -quit)"
+          if [ -n "$CLI" ]; then
+            COMMAND="$PWD/$CLI"
+            MODE="SDL-cli"
+          else
+            COMMAND="$PWD/squashfs-root/AppRun"
+            MODE="AppImage-Qt"
           fi
-          chmod +x "$CLI"
+          test -e "$COMMAND"
+          echo "Eden executable mode: $MODE" | tee evidence/launcher.txt
           set +e
           timeout --signal=TERM --kill-after=2s 20s \
             xvfb-run -a env HOME="$PWD/eden-home" \
             XDG_CONFIG_HOME="$PWD/eden-home/config" \
             XDG_DATA_HOME="$PWD/eden-home/data" \
             XDG_CACHE_HOME="$PWD/eden-home/cache" \
-            SDL_AUDIODRIVER=dummy \
-            "$PWD/$CLI" --null-render --game "$PWD/input/castle_nx_bootstrap.nro" \
+            SDL_AUDIODRIVER=dummy LIBGL_ALWAYS_SOFTWARE=1 \
+            "$COMMAND" --game "$PWD/input/castle_nx_bootstrap.nro" \
             > evidence/eden-cli.log 2>&1
           CODE=$?
           set -e
