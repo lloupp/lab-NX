@@ -1,0 +1,45 @@
+name: GoldenEye NX deko3d ARM64 smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-deko3d-stage1-20261019]
+    paths:
+      - 'nxlab/switch_deko_smoke/**'
+      - '.github/workflows/goldeneye-deko3d-stage1.yml'
+permissions:
+  contents: read
+jobs:
+  dksh-and-nro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check original loader remains unchanged
+        run: |
+          test -s nxlab/switch_loader/source/main.c
+          test -s nxlab/switch_deko_smoke/source/main.c
+          test ! -f nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
+      - name: Compile DKSH and genuine Switch AArch64 NRO using devkitPro
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" -w /work/nxlab/switch_deko_smoke \
+            -e DEVKITPRO=/opt/devkitpro \
+            devkitpro/devkita64:latest make -j2
+      - name: Verify generated assets and executable type
+        run: |
+          set -eux
+          test -s nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
+          test -s nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
+          test -s nxlab/switch_deko_smoke/romfs/shaders/color_fsh.dksh
+          file nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf
+          file nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
+          readelf -h nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf | grep -E 'Machine:|Class:'
+          strings nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf |
+            grep -E 'first-deko-frame-submitted|dksh-loaded|swapchain-created'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-deko3d-real-arm64-nro-and-dksh
+          path: |
+            nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
+            nxlab/switch_deko_smoke/romfs/shaders/*.dksh
+          if-no-files-found: error
