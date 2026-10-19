@@ -1,0 +1,51 @@
+name: ReXGlue SDK real toolchain smoke (no games)
+on:
+  push:
+    branches: [feat/xbla-archive-e2e]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+
+jobs:
+  rexglue-linux-amd64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: nightly-20261002-bd833a2a
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host compiler and package tooling
+        run: |
+          uname -a
+          python3 --version
+          cmake --version | head -1
+          clang++ --version | head -1
+          gh --version | head -1
+      - name: Download pinned upstream Linux SDK (not game files)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rexglue-sdk"
+          gh release download "$RELEASE_TAG" \
+            --repo rexglue/rexglue-sdk \
+            --pattern "*linux-amd64*.zip" \
+            --dir "$RUNNER_TEMP/rexglue-sdk"
+          find "$RUNNER_TEMP/rexglue-sdk" -maxdepth 1 -name '*.zip' -printf '%f %s bytes\n'
+      - name: Validate actual ReXGlue executable
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rexglue-installed"
+          for file in "$RUNNER_TEMP"/rexglue-sdk/*.zip; do
+            unzip -q "$file" -d "$RUNNER_TEMP/rexglue-installed"
+          done
+          CLI=$(find "$RUNNER_TEMP/rexglue-installed" -type f -name rexglue -print -quit)
+          test -n "$CLI"
+          chmod +x "$CLI"
+          echo "SDK_BINARY=$CLI" >> "$GITHUB_ENV"
+          "$CLI" --version
+          "$CLI" init --help
+          "$CLI" codegen --help
+      - name: Verify no game binaries or execution claims
+        run: |
+          test ! -e default.xex
+          echo 'Confirmed: SDK executable ran on GitHub Actions with no commercial files.'
