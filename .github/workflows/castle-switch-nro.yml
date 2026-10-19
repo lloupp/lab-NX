@@ -72,9 +72,9 @@ jobs:
           echo "AppImage stage-0 boot: real NRO, no firmware/keys or commercial files" > evidence/result.txt
           COMMAND="$PWD/squashfs-root/AppRun"
           test -e "$COMMAND"
-          if ! command -v import >/dev/null; then
+          if ! command -v import >/dev/null || ! command -v xdotool >/dev/null; then
             sudo apt-get update -qq
-            sudo apt-get install -y -qq imagemagick
+            sudo apt-get install -y -qq imagemagick xdotool
           fi
           Xvfb :99 -screen 0 1280x720x24 -nolisten tcp > evidence/xvfb.log 2>&1 &
           DISPLAY_PID=$!
@@ -91,10 +91,15 @@ jobs:
             "$COMMAND" "$PWD/input/castle_nx_bootstrap.nro" \
             > evidence/eden.log 2>&1 &
           RUN_PID=$!
-          sleep 9
-          DISPLAY=:99 import -window root evidence/eden-9s.png
-          sleep 12
-          DISPLAY=:99 import -window root evidence/eden-21s.png
+          sleep 4
+          DISPLAY=:99 import -window root evidence/eden-initial.png
+          # On a clean Eden profile, the first-run keys dialog blocks the NRO.
+          # Dismiss its optional installer without supplying third-party keys.
+          DISPLAY=:99 xdotool key --clearmodifiers Right Return || true
+          sleep 5
+          DISPLAY=:99 import -window root evidence/eden-after-dismiss.png
+          sleep 11
+          DISPLAY=:99 import -window root evidence/eden-after-20s.png
           wait "$RUN_PID"
           CODE=$?
           set -e
