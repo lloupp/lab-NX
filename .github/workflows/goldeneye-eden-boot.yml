@@ -1,0 +1,72 @@
+name: GoldenEye Eden NRO full boot with software Vulkan
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths: ['.github/workflows/goldeneye-eden-boot.yml']
+permissions:
+  contents: read
+jobs:
+  boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build NRO ARM64 using official devkitPro
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work/nxlab/switch_loader \
+            -e DEVKITPRO=/opt/devkitpro devkitpro/devkita64:latest make -j2
+          test -s nxlab/switch_loader/goldeneye-nx-loader.nro
+      - name: Install Vulkan Lavapipe and virtual display input
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            mesa-vulkan-drivers vulkan-tools xvfb xauth xdotool scrot \
+            libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0
+          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json vulkaninfo --summary
+      - name: Install Eden official stable 0.2.1
+        run: |
+          curl -fLsS --retry 3 --connect-timeout 20 --max-time 240 \
+            https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-clang-pgo.AppImage \
+            -o Eden.AppImage
+          chmod +x Eden.AppImage
+          ./Eden.AppImage --appimage-extract > /tmp/eden-extract.log 2>&1
+          test -x squashfs-root/AppRun
+      - name: Boot NRO (no commercial game bytes) and screenshot
+        run: |
+          set -eux
+          mkdir -p eden-evidence
+          export HOME="$PWD/eden-home"
+          export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share"
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+          export QT_QPA_PLATFORM=xcb
+          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+          export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
+          export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+          export SDL_AUDIODRIVER=dummy
+          xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' bash -ec '
+            ./squashfs-root/AppRun -g "$PWD/nxlab/switch_loader/goldeneye-nx-loader.nro" \
+              > eden-evidence/stdout.txt 2>&1 &
+            app=$!
+            sleep 7
+            # First-run legal keys warning: NRO does not require retail keys.
+            xdotool mousemove 755 335 click 1 || true
+            sleep 16
+            scrot -o eden-evidence/after23s.png || true
+            sleep 15
+            scrot -o eden-evidence/after38s.png || true
+            kill "$app" 2>/dev/null || true
+            wait "$app" || true
+          '
+          cp "$XDG_DATA_HOME/eden/log/eden_log.txt" eden-evidence/eden_log.txt || true
+          if [ -f eden-evidence/eden_log.txt ]; then
+            grep -E 'Loading GoldenEye NX Loader|Booting game|RendererVulkan|Error|Critical' \
+              eden-evidence/eden_log.txt | tail -40 || true
+          fi
+          echo 'No GoldenEye ROM, ROM-derived graphics, Nintendo keys or firmware in CI.'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: goldeneye-eden-vulkan-boot-log-and-screenshots
+          path: eden-evidence/
+          if-no-files-found: warn
