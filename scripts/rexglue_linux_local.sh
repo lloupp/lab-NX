@@ -8,7 +8,7 @@ PREFIX="${REXGLUE_PREFIX:-$HOME/.local/rexglue}"
 REF="${REXGLUE_REF:-}" # Set to a reviewed commit hash for reproducible builds.
 JOBS="${REXGLUE_BUILD_JOBS:-2}"
 
-for program in git cmake ninja clang++-20; do
+for program in git cmake ninja clang-20 clang++-20; do
   if ! command -v "$program" >/dev/null 2>&1; then
     echo "Missing $program (ReXGlue needs Clang 20+ plus GTK3 headers)" >&2
     exit 3
