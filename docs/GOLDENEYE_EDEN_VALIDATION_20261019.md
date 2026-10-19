@@ -38,9 +38,21 @@ Também foi instalado Eden oficial localmente, junto ao Mesa Lavapipe empacotado
 - `.github/workflows/goldeneye-eden-lavapipe.yml`: empacota somente driver gráfico OSS.
 - `.github/workflows/goldeneye-eden-binary.yml`: obtém Eden v0.2.1 oficial.
 
+## ATUALIZAÇÃO: PRIMEIRO FRAMEBUFFER VISÍVEL NO EDEN
+
+Workflow: https://github.com/lloupp/lab-NX/actions/runs/39319212976
+
+A versão `93dc66a` do NRO exibe um **padrão de diagnóstico de três barras coloridas RGB** quando não encontra a ROM no CI. É um framebuffer real submetido pelo código ARM64 via libnx no Eden Vulkan/Lavapipe, **não é conteúdo do GoldenEye**.
+
+- Captura oficial do CI: artifact `goldeneye-eden-vulkan-boot-log-and-screenshots`, arquivo `after38s.png`.
+- Eden reportou **60 FPS/16,64 ms** para o homebrew diagnóstico, não para a campanha GoldenEye.
+- Trace gravado pelo código convidado: `main-entered`, `console-init-ok`, `hid-init-ok`, `rom-load-failed`, `error-framebuffer-init-attempted`, `error-diagnostic-frame-submitted`.
+- A imagem visível é prova adicional de que a implementação de framebuffer via `framebufferBegin/framebufferEnd` funciona no Eden.
+- O próximo passo é executar este mesmo NRO **com a ROM americana privada** em um ambiente Eden com RAM suficiente (idealmente ao menos 8 GiB) e verificar a decodificação/textura Rareware real, sem distribuir a ROM. Integração Fast3D e gameplay original seguem pendentes.
+
 ## PRÓXIMA PRIORIDADE
 
-1. Validar a apresentação do framebuffer básico com uma tela de diagnóstico **sem ROM** no CI. Se a tela permanecer preta, depurar o caminho VI/Framebuffer/libnx no Eden. Não confundir tela sintética de diagnóstico com pixels originais.
+1. **Feito:** apresentação do framebuffer de diagnóstico sem ROM no Eden. Agora testar **a ROM real privada** no mesmo código e validar `rom-load-success`/`first-rom-sprite-frame-submitted`.
 2. Testar o NRO com a ROM original numa máquina Eden com mais de 4 GiB de RAM ou no Switch físico e procurar `rom-load-success` e `first-rom-sprite-frame-submitted` no arquivo `eden_boot_trace.txt`.
 3. Integrar `gfx_pc.cpp` (Fast3D, cujo objeto AArch64 já compila) com um backend GPU real Switch, mapeamento de memória, shims do motor GoldenEye e sidecars derivados da ROM. Essa etapa **não foi implementada**.
 4. Aplicar patch PT-BR legítimo e conectar input ao motor quando o frame do jogo estiver funcional.
