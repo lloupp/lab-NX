@@ -8,6 +8,7 @@ on:
       - feat/reusable-recipe-supervisor
       - feat/bonsai-local-advisor
       - feat/castle-playability-goals
+      - feat/xbla-archive-e2e
   pull_request:
     branches:
       - main
@@ -16,6 +17,7 @@ on:
       - feat/automated-m2-pipeline
       - feat/reusable-recipe-supervisor
       - feat/bonsai-local-advisor
+      - feat/castle-playability-goals
 jobs:
   tests:
     runs-on: ubuntu-latest
