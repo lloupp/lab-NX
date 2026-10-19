@@ -63,36 +63,45 @@ jobs:
           chmod +x Eden.AppImage
           ./Eden.AppImage --appimage-extract >/dev/null
           find squashfs-root -type f \( -name eden-cli -o -name eden \) -print
-      - name: Attempt Eden CPU boot with null renderer and isolated home
+      - name: Attempt graphical Eden boot with Xvfb screenshots
         run: |
           set -euo pipefail
-          mkdir -p evidence eden-home
-          find squashfs-root -maxdepth 3 -name '*eden*' -print > evidence/appimage-binaries.txt
-          CLI="$(find squashfs-root -name eden-cli -print -quit)"
-          if [ -n "$CLI" ]; then
-            COMMAND="$PWD/$CLI"
-            MODE="SDL-cli"
-          else
-            COMMAND="$PWD/squashfs-root/AppRun"
-            MODE="AppImage-Qt"
-          fi
+          mkdir -p evidence eden-home eden-home/config eden-home/data eden-home/cache eden-home/runtime
+          chmod 700 eden-home/runtime
+          find squashfs-root -maxdepth 4 -iname '*eden*' -print > evidence/appimage-binaries.txt
+          echo "AppImage stage-0 boot: real NRO, no firmware/keys or commercial files" > evidence/result.txt
+          COMMAND="$PWD/squashfs-root/AppRun"
           test -e "$COMMAND"
-          echo "Eden executable mode: $MODE" | tee evidence/launcher.txt
+          if ! command -v import >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq imagemagick
+          fi
+          Xvfb :99 -screen 0 1280x720x24 -nolisten tcp > evidence/xvfb.log 2>&1 &
+          DISPLAY_PID=$!
+          trap 'kill "$DISPLAY_PID" 2>/dev/null || true' EXIT
+          sleep 1
           set +e
-          timeout --signal=TERM --kill-after=2s 20s \
-            xvfb-run -a env HOME="$PWD/eden-home" \
+          timeout --signal=TERM --kill-after=2s 26s \
+            env DISPLAY=:99 HOME="$PWD/eden-home" \
             XDG_CONFIG_HOME="$PWD/eden-home/config" \
             XDG_DATA_HOME="$PWD/eden-home/data" \
             XDG_CACHE_HOME="$PWD/eden-home/cache" \
-            SDL_AUDIODRIVER=dummy LIBGL_ALWAYS_SOFTWARE=1 \
-            "$COMMAND" --game "$PWD/input/castle_nx_bootstrap.nro" \
-            > evidence/eden-cli.log 2>&1
+            XDG_RUNTIME_DIR="$PWD/eden-home/runtime" \
+            QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy \
+            "$COMMAND" "$PWD/input/castle_nx_bootstrap.nro" \
+            > evidence/eden.log 2>&1 &
+          RUN_PID=$!
+          sleep 9
+          DISPLAY=:99 import -window root evidence/eden-9s.png
+          sleep 12
+          DISPLAY=:99 import -window root evidence/eden-21s.png
+          wait "$RUN_PID"
           CODE=$?
           set -e
-          echo "eden_exit_code=$CODE" | tee evidence/result.txt
-          echo "No keys, firmware, or commercial game was supplied." | tee -a evidence/result.txt
-          grep -Ei 'nro|homebrew|error|failed|launch|program|unsupported|keys|firmware|missing' evidence/eden-cli.log | tail -60 || true
-          echo "A timeout or running emulator alone DOES NOT verify guest execution." | tee -a evidence/result.txt
+          echo "eden_exit_code=$CODE" >> evidence/result.txt
+          echo "Screenshot does not alone prove NRO guest execution." >> evidence/result.txt
+          find eden-home -type f -iname '*.log' -size -10M -exec sh -c 'cp "$1" evidence/"$(basename "$1")"' _ '{}' \; || true
+          grep -Ei 'nro|homebrew|fail|error|program|firmware|keys' evidence/eden.log | tail -65 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
