@@ -11,6 +11,7 @@ on:
       - feat/xbla-archive-e2e
       - feat/xex-lzx-verified-chain
       - feat/castle-real-powerpc-image
+      - feat/castle-import-contracts
   pull_request:
     branches:
       - main
@@ -22,6 +23,7 @@ on:
       - feat/castle-playability-goals
       - feat/xbla-archive-e2e
       - feat/xex-lzx-verified-chain
+      - feat/castle-real-powerpc-image
 jobs:
   tests:
     runs-on: ubuntu-latest
