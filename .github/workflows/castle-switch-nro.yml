@@ -27,6 +27,7 @@ jobs:
             switch/castle_bootstrap/tests/test_ppc_pe.c \
             -o /tmp/test_guest_ppc
           /tmp/test_guest_ppc
+          bash -n scripts/eden_stage1_private.sh
       - name: Compile real Switch ARM64 libnx ELF and NRO in pinned devkitPro image
         run: |
           docker run --rm --platform linux/amd64 \
