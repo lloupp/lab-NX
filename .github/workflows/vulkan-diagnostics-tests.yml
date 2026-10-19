@@ -1,0 +1,26 @@
+name: lab-NX Vulkan diagnostic tests
+on:
+  push:
+    branches: [feat/castle-vulkan-lavapipe]
+  pull_request:
+    branches: [feat/castle-rexglue-native-build]
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.version }}
+      - name: Install synthetic test dependencies
+        run: python -m pip install 'cryptography>=42,<48' tomli
+      - name: Run all unit tests without any commercial files
+        run: python -m unittest discover -s tests -v
+      - name: Compile Python source
+        run: python -m compileall -q nxlab
