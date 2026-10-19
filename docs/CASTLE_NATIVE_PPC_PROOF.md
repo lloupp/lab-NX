@@ -51,6 +51,26 @@ unsupported instructions, section bounds, native build and run.
 `python3 -m unittest discover -s tests -v` runs this suite in the larger
 NX-Lab project.
 
+
+## New: real PowerPC-derived AArch64 object (host cross-compilation)
+
+With the **original** Castle Crashers snippet at `0x8208EE10`, the
+experimental lifter also emitted a freestanding C++ function and used Clang
+`--target=aarch64-none-elf` to compile an authentic **ELF64 AArch64 relocatable
+object** (840 bytes in the private test). The object reports ELF machine
+`EM_AARCH64=183`; LLVM recognizes an ARM64 `add w0, w0, #0x68` followed
+by `ret`. The observed 32-bit behavior matches five host-native test cases.
+
+```bash
+python3 -m nxlab.ppc_leaf /private/castle-original-ppc.pe \
+  --address 0x8208EE10 --instructions 2 \
+  --workspace /private/ppc-leaf-arm64 --arm64
+```
+
+This file is **not** a Nintendo Switch NRO/NSO, has no Xbox runtime and was
+**not executed on ARM64 hardware**; it proves cross-compilation only.
+The compiler-generated object (derived from commercial code) stays private.
+
 ## Remaining milestones
 
 - Install and invoke a **real ReXGlue SDK** on the private Xbox XEX; compare
