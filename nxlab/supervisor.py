@@ -26,7 +26,9 @@ def _fingerprint(source: Path, recipe: str, codegen: bool, rexglue: str):
 
 
 def observe(source, workspace, profile="castle-crashers", codegen=False,
-            rexglue="rexglue", force=False) -> dict:
+            rexglue="rexglue", force=False, bonsai=False,
+            bonsai_url="http://127.0.0.1:8080/v1/chat/completions",
+            bonsai_model="bonsai-4b", bonsai_allow_lan=False) -> dict:
     """One supervised attempt; requires --force to rerun unchanged inputs."""
     from .auto import run as run_pipeline, workspace_outside_git
 
@@ -57,6 +59,15 @@ def observe(source, workspace, profile="castle-crashers", codegen=False,
         codegen=codegen, rexglue=rexglue)
     assessment = evaluate(report, recipe)
     action = next_action(assessment, report)
+    advisory = {"status": "not_requested"}
+    if bonsai:
+        from .bonsai import advise, BonsaiError
+        try:
+            suggestion = advise(report, profile, url=bonsai_url,
+                                model=bonsai_model, allow_lan=bonsai_allow_lan)
+            advisory = {"status": "available", "suggestion": suggestion["suggestion"]}
+        except (BonsaiError, OSError, ValueError) as error:
+            advisory = {"status": "unavailable", "reason": type(error).__name__}
     record = {"fingerprint": fingerprint, "recipe": recipe.name,
               "run_id": location.name, "exit_code": rc,
               "status": assessment["status"],
@@ -65,7 +76,7 @@ def observe(source, workspace, profile="castle-crashers", codegen=False,
     with ledger.open("a", encoding="utf8") as fp:
         fp.write(json.dumps(record, separators=(",", ":")) + "\n")
     return {"state": "evaluated", "recipe": recipe.to_json(),
-            "evaluation": assessment, "action": action,
+            "evaluation": assessment, "action": action, "bonsai": advisory,
             "report": str(location / "report.json"), "exit_code": rc}
 
 
@@ -77,10 +88,15 @@ def main(argv=None):
     p.add_argument("--codegen", action="store_true")
     p.add_argument("--rexglue", default="rexglue")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--bonsai", action="store_true", help="Ask Bonsai for advice after the verified pipeline")
+    p.add_argument("--bonsai-url", default="http://127.0.0.1:8080/v1/chat/completions")
+    p.add_argument("--bonsai-model", default="bonsai-4b")
+    p.add_argument("--bonsai-allow-lan", action="store_true")
     args = p.parse_args(argv)
     try:
         result = observe(args.input, args.workspace, args.recipe,
-                         args.codegen, args.rexglue, args.force)
+                         args.codegen, args.rexglue, args.force,
+                        args.bonsai, args.bonsai_url, args.bonsai_model, args.bonsai_allow_lan)
         print(json.dumps(result, indent=2, ensure_ascii=False))
         if result["state"] == "unsupported_backend":
             return 3
