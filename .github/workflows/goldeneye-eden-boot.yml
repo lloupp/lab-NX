@@ -60,6 +60,14 @@ jobs:
             wait "$app" || true
           ' || echo 'Eden startup timed out or exited; preserving logs/captures'
           cp "$XDG_DATA_HOME/eden/log/eden_log.txt" eden-evidence/eden_log.txt || true
+          trace="$XDG_DATA_HOME/eden/sdmc/switch/lab-nx/goldeneye/eden_boot_trace.txt"
+          if test -s "$trace"; then
+            cp "$trace" eden-evidence/guest_boot_trace.txt
+            echo "PROOF OF GUEST MAIN:"
+            cat "$trace"
+          else
+            echo "GUEST MAIN NOT PROVEN: no SDMC trace (could be mount failure or early crash)"
+          fi
           if [ -f eden-evidence/eden_log.txt ]; then
             grep -E 'Loading GoldenEye NX Loader|Booting game|RendererVulkan|Error|Critical' \
               eden-evidence/eden_log.txt | tail -40 || true
