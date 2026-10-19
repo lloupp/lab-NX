@@ -1,0 +1,137 @@
+name: Castle Switch stage-0 ARM64 NRO (no game included)
+on:
+  push:
+    branches: [feat/castle-switch-nro-bootstrap]
+  pull_request:
+    branches: [feat/castle-title-input-probe]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  castle-switch-nro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run independent host parser tests
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -I switch/castle_bootstrap/include \
+            switch/castle_bootstrap/source/xex_probe.c \
+            switch/castle_bootstrap/tests/test_probe.c \
+            -o /tmp/test_castle_xex
+          /tmp/test_castle_xex
+      - name: Compile real Switch ARM64 libnx ELF and NRO in pinned devkitPro image
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -e DEVKITPRO=/opt/devkitpro \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work/switch/castle_bootstrap \
+            devkitpro/devkita64:20260219 \
+            make -j2
+      - name: Verify that binary is a genuine NRO0 image
+        run: |
+          python3 switch/castle_bootstrap/tests/inspect_nro.py \
+            switch/castle_bootstrap/castle_nx_bootstrap.nro
+          file switch/castle_bootstrap/castle_nx_bootstrap.elf
+          test -f switch/castle_bootstrap/castle_nx_bootstrap.nro
+          ! grep -aq 'Newgrounds' switch/castle_bootstrap/castle_nx_bootstrap.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: castle-nx-stage0-nro
+          path: switch/castle_bootstrap/castle_nx_bootstrap.nro
+          if-no-files-found: error
+          retention-days: 7
+
+  eden-stage0-diagnostic:
+    name: Try opening stage-0 NRO in Eden v0.2.1 (no game/keys)
+    needs: castle-switch-nro
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: castle-nx-stage0-nro
+          path: input
+      - name: Fetch official Eden Linux v0.2.1 AppImage
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 2 --max-time 220 \
+            "https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-gcc-standard.AppImage" \
+            --output Eden.AppImage
+          sha256sum Eden.AppImage | tee eden-appimage-sha256.txt
+          chmod +x Eden.AppImage
+          ./Eden.AppImage --appimage-extract >/dev/null
+          find squashfs-root -type f \( -name eden-cli -o -name eden \) -print
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eden-public-linux-v0.2.1-appimage
+          path: Eden.AppImage
+          if-no-files-found: error
+          retention-days: 1
+      - name: Attempt graphical Eden boot with Xvfb screenshots
+        run: |
+          set -euo pipefail
+          mkdir -p evidence eden-home eden-home/config eden-home/data eden-home/cache eden-home/runtime
+          chmod 700 eden-home/runtime
+          find squashfs-root -maxdepth 4 -iname '*eden*' -print > evidence/appimage-binaries.txt
+          echo "AppImage stage-0 boot: real NRO, no firmware/keys or commercial files" > evidence/result.txt
+          COMMAND="$PWD/squashfs-root/AppRun"
+          test -e "$COMMAND"
+          if ! command -v import >/dev/null || ! command -v xdotool >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq imagemagick xdotool
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mesa-vulkan-drivers vulkan-tools
+          ICD="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
+          if [ -n "$ICD" ]; then
+            echo "Mesa software Vulkan ICD: $ICD" > evidence/graphics.txt
+          else
+            echo "No Mesa Lavapipe ICD" > evidence/graphics.txt
+          fi
+          vulkaninfo --summary > evidence/vulkan.txt 2>&1 || true
+          Xvfb :99 -screen 0 1280x720x24 -nolisten tcp > evidence/xvfb.log 2>&1 &
+          DISPLAY_PID=$!
+          trap 'kill "$DISPLAY_PID" 2>/dev/null || true' EXIT
+          sleep 1
+          set +e
+          timeout --signal=TERM --kill-after=2s 26s \
+            env DISPLAY=:99 HOME="$PWD/eden-home" \
+            XDG_CONFIG_HOME="$PWD/eden-home/config" \
+            XDG_DATA_HOME="$PWD/eden-home/data" \
+            XDG_CACHE_HOME="$PWD/eden-home/cache" \
+            XDG_RUNTIME_DIR="$PWD/eden-home/runtime" \
+            QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy \
+            VK_DRIVER_FILES="$ICD" VK_ICD_FILENAMES="$ICD" \
+            "$COMMAND" --null-render --game "$PWD/input/castle_nx_bootstrap.nro" \
+            > evidence/eden.log 2>&1 &
+          RUN_PID=$!
+          sleep 4
+          DISPLAY=:99 import -window root evidence/eden-initial.png
+          # On a clean Eden profile, the first-run keys dialog blocks the NRO.
+          # Dismiss its optional installer without supplying third-party keys.
+          DISPLAY=:99 xdotool key --clearmodifiers Right Return || true
+          sleep 5
+          DISPLAY=:99 import -window root evidence/eden-after-dismiss.png
+          sleep 11
+          DISPLAY=:99 import -window root evidence/eden-after-20s.png
+          wait "$RUN_PID"
+          CODE=$?
+          set -e
+          echo "eden_exit_code=$CODE" >> evidence/result.txt
+          echo "Screenshot does not alone prove NRO guest execution." >> evidence/result.txt
+          test ! -f eden-home/config/eden/qt-config.ini || cp eden-home/config/eden/qt-config.ini evidence/qt-config.ini
+          find eden-home -type f \( -iname '*.log' -o -iname '*log*.txt' \) \
+            -size -10M -exec sh -c 'cp "$1" evidence/"$(basename "$1")"' _ '{}' \; || true
+          grep -Ri 'LABNX_CASTLE_STAGE0_MAIN_ENTERED' eden-home evidence || true
+          grep -Ei 'nro|homebrew|fail|error|program|firmware|keys' evidence/eden.log | tail -65 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: castle-nx-eden-stage0-diagnostics
+          path: |
+            evidence/
+            eden-appimage-sha256.txt
+          if-no-files-found: warn
+          retention-days: 7
