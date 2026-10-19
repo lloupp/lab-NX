@@ -64,6 +64,22 @@ def install_hints(manifest: Path, hints: Path) -> None:
                      f'includes = ["{filename}"]', 1), encoding="utf-8")
 
 
+
+def enable_gpu_plugin(cmake_file: Path, plugin: str) -> None:
+    """Configure an SDK GPU backend to be staged beside the executable."""
+    if plugin != "xenos":
+        raise NativeBuildError("Only vetted ReXGlue Xenos GPU plugin is supported")
+    cmake_file = Path(cmake_file)
+    original = cmake_file.read_text(encoding="utf-8")
+    matches = re.findall(r"^rexglue_setup_target\\(([A-Za-z][A-Za-z0-9_]*)\\)$", original,
+                         flags=re.MULTILINE)
+    if len(matches) != 1:
+        raise NativeBuildError("Cannot identify one unconfigured rexglue_setup_target")
+    target = matches[0]
+    cmake_file.write_text(original.replace(
+        f"rexglue_setup_target({target})",
+        f"rexglue_setup_target({target} GPU_PLUGINS xenos)", 1), encoding="utf-8")
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
@@ -91,9 +107,12 @@ def run_process(args: list[str], cwd: Path, log: Path, timeout: int) -> int:
 def build_private(xex: Path, workspace: Path, sdk_prefix: Path,
                   hints: Path | None = None, project: str = "castle_crashers",
                   compiler: str = "clang++", parallel: int = 2,
-                  timeout: int = 300, build: bool = True):
+                  timeout: int = 300, build: bool = True,
+                  gpu_plugin: str | None = None):
     if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,48}", project):
         raise NativeBuildError("Invalid project name")
+    if gpu_plugin not in (None, 'xenos'):
+        raise NativeBuildError('Unsupported GPU plugin')
     if not 1 <= parallel <= 8 or not 10 <= timeout <= 1800:
         raise NativeBuildError("Invalid build limits")
     xex = Path(xex).expanduser().resolve(strict=True)
@@ -145,6 +164,9 @@ def build_private(xex: Path, workspace: Path, sdk_prefix: Path,
                 raise NativeBuildError("Expected exactly one initialized manifest")
             if hints is not None:
                 install_hints(manifests[0], hints)
+            if gpu_plugin:
+                enable_gpu_plugin(root / 'CMakeLists.txt', gpu_plugin)
+                report['gpu_plugin_staging_requested'] = gpu_plugin
             record("sdk_init", "passed", "Private ReXGlue project initialized")
             rc = run_process([str(binary), "codegen", manifests[0].name],
                              root, run_dir / "rexglue-codegen.log", timeout)
@@ -213,12 +235,13 @@ def main(argv=None):
     parser.add_argument("--parallel", type=int, default=2)
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--no-build", action="store_true")
+    parser.add_argument("--gpu-plugin", choices=['xenos'], help='Stage Xenos GPU plugin via CMake')
     args = parser.parse_args(argv)
     try:
         result, folder, exit_code = build_private(
             args.xex, args.workspace, args.sdk_prefix, args.hints,
             args.project, args.compiler, args.parallel, args.timeout,
-            build=not args.no_build)
+            build=not args.no_build, gpu_plugin=args.gpu_plugin)
         print(json.dumps({"report": str(folder / "report.json"),
                           "steps": result["steps"], "exit_code": exit_code},
                          indent=2, ensure_ascii=False))
