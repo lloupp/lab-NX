@@ -12,6 +12,7 @@ on:
       - feat/xex-lzx-verified-chain
       - feat/castle-real-powerpc-image
       - feat/castle-import-contracts
+      - feat/ppc-native-leaf-proof
   pull_request:
     branches:
       - main
@@ -24,6 +25,7 @@ on:
       - feat/xbla-archive-e2e
       - feat/xex-lzx-verified-chain
       - feat/castle-real-powerpc-image
+      - feat/castle-import-contracts
 jobs:
   tests:
     runs-on: ubuntu-latest
