@@ -1,9 +1,9 @@
-name: Castle Switch stage-0 ARM64 NRO (no game included)
+name: Castle Switch stage-1 ARM64 PPC leaf (no game included)
 on:
   push:
-    branches: [feat/castle-switch-nro-bootstrap]
+    branches: [feat/castle-switch-nro-bootstrap, feat/castle-ppc-on-eden-stage1]
   pull_request:
-    branches: [feat/castle-title-input-probe]
+    branches: [feat/castle-title-input-probe, feat/castle-switch-nro-bootstrap]
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -21,6 +21,12 @@ jobs:
             switch/castle_bootstrap/tests/test_probe.c \
             -o /tmp/test_castle_xex
           /tmp/test_castle_xex
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -I switch/castle_bootstrap/include \
+            switch/castle_bootstrap/source/ppc_pe.c \
+            switch/castle_bootstrap/tests/test_ppc_pe.c \
+            -o /tmp/test_guest_ppc
+          /tmp/test_guest_ppc
       - name: Compile real Switch ARM64 libnx ELF and NRO in pinned devkitPro image
         run: |
           docker run --rm --platform linux/amd64 \
@@ -38,13 +44,13 @@ jobs:
           ! grep -aq 'Newgrounds' switch/castle_bootstrap/castle_nx_bootstrap.nro
       - uses: actions/upload-artifact@v4
         with:
-          name: castle-nx-stage0-nro
+          name: castle-nx-stage1-ppc-nro
           path: switch/castle_bootstrap/castle_nx_bootstrap.nro
           if-no-files-found: error
           retention-days: 7
 
   eden-stage0-diagnostic:
-    name: Try opening stage-0 NRO in Eden v0.2.1 (no game/keys)
+    name: Try opening stage-1 NRO in Eden v0.2.1 (no game/keys)
     needs: castle-switch-nro
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -75,7 +81,7 @@ jobs:
           mkdir -p evidence eden-home eden-home/config eden-home/data eden-home/cache eden-home/runtime
           chmod 700 eden-home/runtime
           find squashfs-root -maxdepth 4 -iname '*eden*' -print > evidence/appimage-binaries.txt
-          echo "AppImage stage-0 boot: real NRO, no firmware/keys or commercial files" > evidence/result.txt
+          echo "AppImage stage-1 boot: real NRO, guest PPC requires private decoded image" > evidence/result.txt
           COMMAND="$PWD/squashfs-root/AppRun"
           test -e "$COMMAND"
           if ! command -v import >/dev/null || ! command -v xdotool >/dev/null; then
