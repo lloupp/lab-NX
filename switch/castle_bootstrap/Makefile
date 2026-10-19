@@ -10,7 +10,7 @@ LIBNX := $(DEVKITPRO)/libnx
 CFLAGS := -O2 -g -Wall -Wextra -Werror -ffunction-sections -fdata-sections -march=armv8-a+crc+crypto -mtune=cortex-a57 -fPIE -Iinclude -I$(LIBNX)/include
 LDFLAGS := -specs=$(LIBNX)/switch.specs -Wl,--gc-sections -L$(LIBNX)/lib
 LDLIBS := -lnx -lm
-OBJS := build/main.o build/xex_probe.o
+OBJS := build/main.o build/xex_probe.o build/ppc_pe.o
 .PHONY: all clean
 all: $(TARGET).nro
 build:
@@ -18,6 +18,8 @@ build:
 build/main.o: source/main.c include/xex_probe.h | build
 	$(CC) $(CFLAGS) -c $< -o $@
 build/xex_probe.o: source/xex_probe.c include/xex_probe.h | build
+	$(CC) $(CFLAGS) -c $< -o $@
+build/ppc_pe.o: source/ppc_pe.c include/ppc_pe.h | build
 	$(CC) $(CFLAGS) -c $< -o $@
 $(TARGET).elf: $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDLIBS) -o $@
