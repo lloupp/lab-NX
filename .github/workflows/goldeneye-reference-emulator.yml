@@ -1,0 +1,50 @@
+name: GoldenEye N64 private ROM reference capture tool
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths: ['.github/workflows/goldeneye-reference-emulator.yml']
+  pull_request:
+    paths: ['.github/workflows/goldeneye-reference-emulator.yml']
+permissions:
+  contents: read
+jobs:
+  ubuntu-emulator-portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install open-source N64 emulator packages; no ROM at build time
+        run: |
+          sudo add-apt-repository -y universe
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice \
+            mupen64plus-input-sdl mupen64plus-audio-sdl mupen64plus-data
+      - name: Export portable binaries, plugins, configuration, licenses
+        run: |
+          set -euo pipefail
+          mkdir -p portable/bin portable/libs portable/plugins portable/data portable/licenses
+          BIN=$(command -v mupen64plus || echo /usr/games/mupen64plus)
+          test -x "$BIN"
+          cp "$BIN" portable/bin/mupen64plus
+          find /usr/lib -type f -name 'libmupen64plus*.so*' -print
+          for file in $(find /usr/lib -name 'libmupen64plus*.so*' -type f); do cp "$file" portable/libs/; done
+          find /usr/lib -iname '*mupen64plus*' -type f | head -40
+          for pkg in mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice mupen64plus-input-sdl mupen64plus-audio-sdl; do
+            dpkg -L "$pkg" | grep -E '\\.so(\\.[0-9]+)*$' | while read -r so; do
+              [ -f "$so" ] && cp "$so" portable/plugins/
+            done || :
+          done
+          test "$(find portable/plugins -name '*.so' | wc -l)" -ge 4
+          cp -a /usr/share/mupen64plus/. portable/data/ || true
+          for pkg in mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice mupen64plus-input-sdl mupen64plus-audio-sdl; do
+            cp /usr/share/doc/"$pkg"/copyright portable/licenses/"$pkg".txt || true
+          done
+          ldd portable/bin/mupen64plus
+          echo "No ROM files or video captures are published from CI."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-reference-n64-emulator-linux-x86_64
+          path: portable/
+          if-no-files-found: error
