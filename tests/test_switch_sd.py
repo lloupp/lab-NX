@@ -21,6 +21,20 @@ class SwitchSdTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 prepare(src,sd)
 
+    def test_reject_non_original_ppc_before_copy(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            src=root/"synthetic.xex"
+            src.write_bytes(fixture())
+            fake_pe=root/"fake-decoded.pe"
+            fake_pe.write_bytes(b"MZ"+bytes(2_949_118))
+            sd=root/"sdmc"
+            sd.mkdir()
+            with self.assertRaises(ValueError):
+                prepare(src,sd,decoded_pe=fake_pe)
+            self.assertFalse((sd/"switch/labnx/castle/default.xex").exists())
+            self.assertFalse((sd/"switch/labnx/castle/decoded-powerpc.bin").exists())
+
     def test_wrong_title_refused(self):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)
