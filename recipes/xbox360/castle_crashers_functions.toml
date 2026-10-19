@@ -7,3 +7,5 @@
 [functions]
 0x820E15E8 = {}
 0x82112BC0 = { size = 988 }
+# Verified virtual-dispatch target: direct PPC entry with guest branch.
+0x82114E20 = {}
