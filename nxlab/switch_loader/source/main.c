@@ -6,14 +6,32 @@
 #include <switch.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include "goldeneye_rom_runtime.h"
 #include "goldeneye_rom_sprite.h"
 #include "goldeneye_switch_libnx.h"
 
 #define GE_ROM_PATH "sdmc:/switch/lab-nx/goldeneye/baserom.u.z64"
 #define GE_PTBR_PATH "sdmc:/switch/lab-nx/goldeneye/ge007.ptbr.z64"
+#define GE_TRACE_PATH "sdmc:/switch/lab-nx/goldeneye/eden_boot_trace.txt"
 #define SCREEN_W 1280u
 #define SCREEN_H 720u
+
+/* Guest-side breadcrumbs: verify that ARM64 main() executes in Eden.
+ * This writes only diagnostic strings to the user's SD, no commercial data.
+ * A missing breadcrumb indicates that the guest stopped before this point
+ * OR that sdmc is not mounted, and must not be treated as proof of execution.
+ */
+static void trace_boot(const char *stage) {
+    FILE *fp;
+    mkdir("sdmc:/switch", 0777);
+    mkdir("sdmc:/switch/lab-nx", 0777);
+    mkdir("sdmc:/switch/lab-nx/goldeneye", 0777);
+    fp = fopen(GE_TRACE_PATH, "a");
+    if (!fp) return;
+    fprintf(fp, "%s\n", stage);
+    fclose(fp);
+}
 
 static void draw_rom_logo(Framebuffer *fb, const ge_rom_image *rom,
                           int offset_x, int offset_y, unsigned scale) {
@@ -56,12 +74,18 @@ int main(int argc, char **argv) {
     ge_input_actions actions = {0};
     ge_rom_result result;
     (void)argc; (void)argv;
+    /* Eden direct-NRO launches may not have a pre-mounted SDMC device. */
+    fsdevMountSdmc();
+    trace_boot("main-entered");
     consoleInit(NULL);
+    trace_boot("console-init-ok");
     ge_switch_pad_init();
+    trace_boot("hid-init-ok");
     result = ge_rom_load(GE_PTBR_PATH, &rom);
     if (result != GE_ROM_OK)
         result = ge_rom_load(GE_ROM_PATH, &rom);
     if (result != GE_ROM_OK) {
+        trace_boot("rom-load-failed");
         printf("GoldenEye NX - ROM ausente/invalida (%s)\n", ge_rom_status_name(result));
         printf("Copie sua ROM para:\n%s\n", GE_ROM_PATH);
         printf("Pressione + para sair.\n");
@@ -73,14 +97,17 @@ int main(int argc, char **argv) {
         consoleExit(NULL);
         return 1;
     }
+    trace_boot("rom-load-success");
     printf("ROM validada. Desenhando sprite original Rareware.\n");
     printf("Isto NAO e gameplay nem um frame do motor do jogo.\n");
     consoleUpdate(NULL);
     consoleExit(NULL);
+    trace_boot("console-exit");
     NWindow *window = nwindowGetDefault();
     Framebuffer fb;
     framebufferCreate(&fb, window, SCREEN_W, SCREEN_H, PIXEL_FORMAT_RGBA_8888, 2);
     framebufferMakeLinear(&fb);
+    trace_boot("framebuffer-ready");
     int pan_x = 0, pan_y = 0;
     while (appletMainLoop()) {
         if (ge_switch_pad_poll(&sample) != 0) break;
@@ -93,6 +120,10 @@ int main(int argc, char **argv) {
         if (pan_y > 250) pan_y = 250;
         if (pan_y < -250) pan_y = -250;
         draw_rom_logo(&fb, &rom, pan_x, pan_y, actions.aim_held ? 8u : 6u);
+        if (pan_x == 0 && pan_y == 0 && !actions.aim_held) {
+            static int frame_marker = 0;
+            if (!frame_marker++) trace_boot("first-rom-sprite-frame-submitted");
+        }
     }
     framebufferClose(&fb);
     ge_rom_unload(&rom);
