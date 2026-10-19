@@ -1,9 +1,17 @@
-name: Python M1 M2 Auto tests
+name: Python M1 M2 recipes tests
 on:
   push:
-    branches: [feat/castle-crashers-m1, feat/castle-crashers-m2, feat/automated-m2-pipeline]
+    branches:
+      - feat/castle-crashers-m1
+      - feat/castle-crashers-m2
+      - feat/automated-m2-pipeline
+      - feat/reusable-recipe-supervisor
   pull_request:
-    branches: [main, feat/castle-crashers-m1, feat/castle-crashers-m2]
+    branches:
+      - main
+      - feat/castle-crashers-m1
+      - feat/castle-crashers-m2
+      - feat/automated-m2-pipeline
 jobs:
   tests:
     runs-on: ubuntu-latest
@@ -15,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Synthetic tests only (no game files)
+      - name: Synthetic unit and orchestration tests (no game files)
         run: python -m unittest discover -s tests -v
-      - name: Compile Python modules
+      - name: Compile source
         run: python -m compileall -q nxlab
