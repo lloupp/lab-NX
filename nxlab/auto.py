@@ -14,6 +14,7 @@ import uuid
 from .stfs import Package
 from .m2 import inspect as inspect_xex
 from . import rexbridge
+from .archive7z import detect as detect_archive, extract_single_stfs
 
 
 def workspace_outside_git(path):
@@ -55,7 +56,18 @@ def run(source, workspace, project='castle_crashers', codegen=False,
         with source.open('rb') as fp:
             magic=fp.read(4)
         if magic in (b'LIVE',b'PIRS',b'CON '):
-            pkg=Package(source)
+            input_stfs = source
+        elif detect_archive(source):
+            input_stfs = dest/'private'/'source.stfs'
+            report['archive'] = extract_single_stfs(source, input_stfs)
+            stage('archive_extract','passed','One STFS member extracted privately')
+        elif magic==b'XEX2':
+            input_stfs = None
+        else:
+            raise ValueError('Expected STFS, XEX2, or 7z/zip containing one STFS')
+
+        if input_stfs is not None:
+            pkg=Package(input_stfs)
             inv=pkg.inventory()
             report['stfs']={'files':inv['files'],'directories':inv['directories'],
                             'executables':[e['name'] for e in inv['executables']]}
@@ -65,12 +77,10 @@ def run(source, workspace, project='castle_crashers', codegen=False,
             if extracted.get('magic')!='XEX2':
                 raise ValueError('Extracted file is not XEX2')
             stage('xex_extract','passed','Private XEX extracted')
-        elif magic==b'XEX2':
+        else:
             xex=source
             stage('stfs','skipped','Already an XEX2 executable')
             stage('xex_extract','skipped','No extraction needed')
-        else:
-            raise ValueError('Expected STFS or XEX2; unpack .7z privately first')
         info=inspect_xex(xex)
         report['xex']={key:info.get(key) for key in
                        ('size_bytes','entry_point','image_base','file_format',
@@ -98,7 +108,7 @@ def run(source, workspace, project='castle_crashers', codegen=False,
 
 def main(argv=None):
     p=argparse.ArgumentParser(description='Automated lab-NX Xbox preflight')
-    p.add_argument('--input',type=Path,required=True,help='Private STFS/XEX2 file')
+    p.add_argument('--input',type=Path,required=True,help='Private STFS/XEX2 or 7z/zip containing STFS')
     p.add_argument('--workspace',type=Path,required=True,help='Outside Git')
     p.add_argument('--project',default='castle_crashers')
     p.add_argument('--codegen',action='store_true')
