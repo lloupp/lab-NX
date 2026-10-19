@@ -1,0 +1,26 @@
+name: Bonsai Pi bridge tests (no model / no game)
+on:
+  push:
+    branches:
+      - feat/bonsai-pi-local-labnx-20261019
+  pull_request:
+    branches:
+      - feat/castle-ppc-on-eden-stage1
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  launcher:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile launcher
+        run: python -m py_compile scripts/launch_bonsai_pi.py
+      - name: Test local API bridge with mocks
+        run: python -m unittest discover -s tests -p 'test_bonsai_pi.py' -v
