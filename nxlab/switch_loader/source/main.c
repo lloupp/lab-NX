@@ -66,6 +66,29 @@ static void draw_rom_logo(Framebuffer *fb, const ge_rom_image *rom,
     framebufferEnd(fb);
 }
 
+/* ROM-free color bars verify libnx framebuffer submission on Eden.
+ * TEST PATTERN, NOT a GoldenEye texture nor any game frame.
+ */
+static void draw_missing_rom_diagnostic(Framebuffer *fb) {
+    u32 stride_bytes;
+    u32 *pixels = (u32 *)framebufferBegin(fb, &stride_bytes);
+    unsigned stride = stride_bytes / sizeof(u32);
+    if (!pixels) return;
+    for (unsigned y = 0; y < SCREEN_H; ++y) {
+        for (unsigned x = 0; x < SCREEN_W; ++x) {
+            u8 r = x < SCREEN_W / 3u ? 190u : 20u;
+            u8 g = x >= SCREEN_W / 3u && x < SCREEN_W * 2u / 3u ? 190u : 20u;
+            u8 b = x >= SCREEN_W * 2u / 3u ? 190u : 20u;
+            /* horizontal status line makes the pattern easy to validate */
+            if (y >= SCREEN_H / 2u - 5u && y < SCREEN_H / 2u + 5u) {
+                r = 240u; g = 240u; b = 240u;
+            }
+            pixels[y * stride + x] = RGBA8_MAXALPHA(r, g, b);
+        }
+    }
+    framebufferEnd(fb);
+}
+
 int main(int argc, char **argv) {
     ge_rom_image rom = {0};
     ge_input_state state = {0};
@@ -86,15 +109,23 @@ int main(int argc, char **argv) {
         result = ge_rom_load(GE_ROM_PATH, &rom);
     if (result != GE_ROM_OK) {
         trace_boot("rom-load-failed");
-        printf("GoldenEye NX - ROM ausente/invalida (%s)\n", ge_rom_status_name(result));
-        printf("Copie sua ROM para:\n%s\n", GE_ROM_PATH);
-        printf("Pressione + para sair.\n");
+        printf("ROM ausente/invalida: %s.\n", ge_rom_status_name(result));
+        printf("Imagem seguinte e apenas PADRAO DIAGNOSTICO.\n");
         consoleUpdate(NULL);
+        consoleExit(NULL);
+        Framebuffer diagnostic_fb;
+        framebufferCreate(&diagnostic_fb, nwindowGetDefault(),
+                          SCREEN_W, SCREEN_H, PIXEL_FORMAT_RGBA_8888, 2);
+        framebufferMakeLinear(&diagnostic_fb);
+        trace_boot("error-framebuffer-init-attempted");
+        int submitted = 0;
         while (appletMainLoop()) {
             if (ge_switch_pad_poll(&sample) != 0) break;
             if (sample.buttons & GE_BTN_PLUS) break;
+            draw_missing_rom_diagnostic(&diagnostic_fb);
+            if (!submitted++) trace_boot("error-diagnostic-frame-submitted");
         }
-        consoleExit(NULL);
+        framebufferClose(&diagnostic_fb);
         return 1;
     }
     trace_boot("rom-load-success");
