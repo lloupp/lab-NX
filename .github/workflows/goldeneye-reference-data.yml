@@ -1,0 +1,30 @@
+name: GoldenEye N64 reference data only
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths: ['.github/workflows/goldeneye-reference-data.yml']
+permissions: { contents: read }
+jobs:
+  export-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official Mupen64Plus configuration files
+        run: |
+          sudo add-apt-repository -y universe
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            mupen64plus-data mupen64plus-video-rice mupen64plus-input-sdl
+          mkdir -p data
+          for source in /usr/share/games/mupen64plus /usr/share/mupen64plus; do
+            if test -d "$source"; then cp -a "$source"/. data/; fi
+          done
+          find data -maxdepth 3 -type f -printf '%p %s bytes\n'
+          test "$(find data -type f | wc -l)" -ge 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-reference-mupen-config
+          path: data/
+          if-no-files-found: error
