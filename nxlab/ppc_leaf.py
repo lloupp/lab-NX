@@ -133,7 +133,38 @@ def generate_cpp(operations):
             'if (*end) return 3; std::cout << run(uint32_t(x)) << "\\n"; }\n')
 
 
-def lift_and_test(pe, address, count, workspace, seeds=(0,1,17,65535,4294967295), compiler='c++'):
+
+def generate_arm64_cpp(operations):
+    """Freestanding game-derived guest function; no Switch runtime or entrypoint."""
+    host=generate_cpp(operations)
+    begin=host.index('uint32_t run(')
+    end=host.index('\nint main(')
+    return ('using uint32_t = unsigned int;\nusing int32_t = int;\n'
+            'extern "C" ' + host[begin:end] + '\n')
+
+
+def compile_arm64(operations, work, compiler='clang++'):
+    """Cross-compile a PRIVATE AArch64 ELF object (not an NRO)."""
+    source=work/'guest_arm64.cpp'
+    output=work/'guest_arm64.o'
+    if source.exists() or output.exists():
+        raise LiftError('Refusing to overwrite private ARM64 output')
+    source.write_text(generate_arm64_cpp(operations), encoding='utf-8')
+    proc=subprocess.run([compiler,'--target=aarch64-none-elf','-std=c++17',
+                         '-O2','-ffreestanding','-fno-rtti','-fno-exceptions',
+                         '-c',str(source),'-o',str(output)],
+                        capture_output=True,text=True,timeout=45,check=False)
+    if proc.returncode:
+        raise LiftError('AArch64 compiler rejected freestanding object: '+proc.stderr[:400])
+    elf=output.read_bytes()
+    if (len(elf)<64 or elf[:4]!=b'\x7fELF' or elf[4:6]!=b'\x02\x01'
+            or int.from_bytes(elf[18:20],'little')!=183):
+        raise LiftError('Cross compiler did not produce an ELF64 AArch64 object')
+    return {'kind':'ELF64 AArch64 relocatable','object_sha256':hashlib.sha256(elf).hexdigest(),
+            'object_bytes':len(elf),'switch_nro':False,'arm64_executed':False}
+
+
+def lift_and_test(pe, address, count, workspace, seeds=(0,1,17,65535,4294967295), compiler='c++', arm64=False):
     work = Path(workspace).expanduser().resolve()
     if any((p/'.git').exists() for p in (work,*work.parents)):
         raise LiftError('Private workspace must be outside Git')
@@ -163,6 +194,8 @@ def lift_and_test(pe, address, count, workspace, seeds=(0,1,17,65535,4294967295)
             'results':runs,'all_matches':True,'host_compiled':True,
             'rexglue_used':False,'function_boundary_proven':False,
             'full_game_playable':False,'switch_nro_built':False}
+    if arm64:
+        report['arm64_cross_compile'] = compile_arm64(operations,work)
     (work/'evidence.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     return report
 
@@ -173,9 +206,10 @@ def main(argv=None):
     parser.add_argument('--address',required=True,type=lambda v:int(v,0))
     parser.add_argument('--instructions',required=True,type=int)
     parser.add_argument('--workspace',required=True,type=Path)
+    parser.add_argument('--arm64',action='store_true',help='Also cross-compile freestanding AArch64 object')
     args=parser.parse_args(argv)
     try:
-        print(json.dumps(lift_and_test(args.private_pe,args.address,args.instructions,args.workspace),indent=2))
+        print(json.dumps(lift_and_test(args.private_pe,args.address,args.instructions,args.workspace,arm64=args.arm64),indent=2))
         return 0
     except (OSError,ValueError,subprocess.TimeoutExpired) as exc:
         print('PPC native test:',exc)
