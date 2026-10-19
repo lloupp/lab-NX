@@ -88,7 +88,7 @@ jobs:
             XDG_CACHE_HOME="$PWD/eden-home/cache" \
             XDG_RUNTIME_DIR="$PWD/eden-home/runtime" \
             QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy \
-            "$COMMAND" "$PWD/input/castle_nx_bootstrap.nro" \
+            "$COMMAND" --null-render --game "$PWD/input/castle_nx_bootstrap.nro" \
             > evidence/eden.log 2>&1 &
           RUN_PID=$!
           sleep 4
@@ -105,7 +105,9 @@ jobs:
           set -e
           echo "eden_exit_code=$CODE" >> evidence/result.txt
           echo "Screenshot does not alone prove NRO guest execution." >> evidence/result.txt
-          find eden-home -type f -iname '*.log' -size -10M -exec sh -c 'cp "$1" evidence/"$(basename "$1")"' _ '{}' \; || true
+          find eden-home -type f \( -iname '*.log' -o -iname '*log*.txt' \) \
+            -size -10M -exec sh -c 'cp "$1" evidence/"$(basename "$1")"' _ '{}' \; || true
+          grep -Ri 'LABNX_CASTLE_STAGE0_MAIN_ENTERED' eden-home evidence || true
           grep -Ei 'nro|homebrew|fail|error|program|firmware|keys' evidence/eden.log | tail -65 || true
       - uses: actions/upload-artifact@v4
         if: always()
