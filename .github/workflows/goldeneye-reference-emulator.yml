@@ -31,6 +31,16 @@ jobs:
           cp -L /usr/lib/x86_64-linux-gnu/libmupen64plus.so.2 portable/libs/libmupen64plus.so.2
           cp -L /usr/lib/x86_64-linux-gnu/mupen64plus/*.so portable/plugins/
           test "$(find portable/plugins -name '*.so' | wc -l)" -ge 4
+          # Bundle shared-library dependencies of core/plugins for isolated replay.
+          # Exclude glibc / OpenGL display drivers so the destination uses its own X server + Mesa.
+          for shared in portable/libs/*.so* portable/plugins/*.so portable/bin/mupen64plus; do
+            ldd "$shared" | awk '/=> \/[^ ]+/ {print $3}' || true
+          done | sort -u | while read -r dep; do
+            case "$(basename "$dep")" in
+              libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|libresolv.so.*|libGL*|libEGL*|libgbm*|libdrm*|libX*|libwayland*|libstdc++*|libgcc_s*|ld-linux*) continue ;;
+            esac
+            [ ! -f "$dep" ] || cp -L "$dep" portable/libs/ || true
+          done
           cp -a /usr/share/mupen64plus/. portable/data/ || true
           for pkg in mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice mupen64plus-input-sdl mupen64plus-audio-sdl; do
             cp /usr/share/doc/"$pkg"/copyright portable/licenses/"$pkg".txt || true
