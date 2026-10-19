@@ -1,0 +1,25 @@
+name: Fetch official Eden Linux for private NRO test
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths: ['.github/workflows/goldeneye-eden-binary.yml']
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Download trusted official Eden v0.2.1 executable
+        run: |
+          curl -fLsS --retry 3 --connect-timeout 20 --max-time 240 \
+            https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-clang-pgo.AppImage \
+            -o Eden.AppImage
+          test "$(stat -c%s Eden.AppImage)" -gt 30000000
+          sha256sum Eden.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eden-v0.2.1-linux-appimage-for-private-tests
+          path: Eden.AppImage
+          if-no-files-found: error
