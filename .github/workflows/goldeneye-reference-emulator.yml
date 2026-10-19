@@ -28,14 +28,8 @@ jobs:
           BIN=$(command -v mupen64plus || echo /usr/games/mupen64plus)
           test -x "$BIN"
           cp "$BIN" portable/bin/mupen64plus
-          find /usr/lib -type f -name 'libmupen64plus*.so*' -print
-          for file in $(find /usr/lib -name 'libmupen64plus*.so*' -type f); do cp "$file" portable/libs/; done
-          find /usr/lib -iname '*mupen64plus*' -type f | head -40
-          for pkg in mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice mupen64plus-input-sdl mupen64plus-audio-sdl; do
-            dpkg -L "$pkg" | grep -E '\\.so(\\.[0-9]+)*$' | while read -r so; do
-              [ -f "$so" ] && cp "$so" portable/plugins/
-            done || :
-          done
+          cp -L /usr/lib/x86_64-linux-gnu/libmupen64plus.so.2 portable/libs/libmupen64plus.so.2
+          cp -L /usr/lib/x86_64-linux-gnu/mupen64plus/*.so portable/plugins/
           test "$(find portable/plugins -name '*.so' | wc -l)" -ge 4
           cp -a /usr/share/mupen64plus/. portable/data/ || true
           for pkg in mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice mupen64plus-input-sdl mupen64plus-audio-sdl; do
