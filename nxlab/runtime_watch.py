@@ -14,6 +14,7 @@ import selectors
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 GUEST_FAULT = re.compile(r"Unhandled guest access violation: (?:read|write) of guest (0x[0-9A-Fa-f]{8})")
@@ -118,6 +119,26 @@ def watch(command, duration=6, environ=None):
     }
 
 
+def make_alsa_null_config(folder):
+    """Provide a local ALSA playback sink without touching /etc/asound.conf."""
+    target = Path(folder) / "alsa-null.conf"
+    with target.open("x", encoding="utf-8") as stream:
+        stream.write("pcm.!default {\n    type null\n}\n"
+                     "ctl.!default {\n    type hw\n    card 0\n}\n")
+    return target
+
+
+def run_with_optional_audio(command, seconds, env, alsa_null=False):
+    """ALSA null device is isolated per run and destroyed afterwards."""
+    if not alsa_null:
+        return watch(command, seconds, env)
+    with tempfile.TemporaryDirectory(prefix="labnx-alsa-null-") as temp:
+        environment = dict(env)
+        environment["SDL_AUDIODRIVER"] = "alsa"
+        environment["ALSA_CONFIG_PATH"] = str(make_alsa_null_config(temp))
+        return watch(command, seconds, environment)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="lab-NX bounded runtime diagnostics")
     p.add_argument("--exe", required=True, type=Path)
@@ -126,10 +147,13 @@ def main(argv=None):
     p.add_argument("--icd", type=Path)
     p.add_argument("--duration", type=float, default=6)
     p.add_argument("--audio-driver", help="Opt-in SDL driver, no dummy by default")
+    p.add_argument("--alsa-null", action="store_true", help="Use a private ALSA null playback sink")
     p.add_argument("--xvfb", action="store_true")
     p.add_argument("--output", type=Path)
     args = p.parse_args(argv)
     try:
+        if args.alsa_null and args.audio_driver:
+            raise ValueError('Choose --alsa-null OR --audio-driver')
         exe = args.exe.expanduser().resolve(strict=True)
         root = args.game_data_root.expanduser().resolve(strict=True)
         sdk = args.sdk_lib_dir.expanduser().resolve(strict=True)
@@ -151,7 +175,7 @@ def main(argv=None):
                    "--log_level", "error", "--log_file", "/dev/stdout"]
         if args.xvfb:
             command = ["xvfb-run", "-a", "-s", "-screen 0 1280x720x24", *command]
-        result = watch(command, args.duration, environment)
+        result = run_with_optional_audio(command, args.duration, environment, args.alsa_null)
         if args.output:
             out = args.output.expanduser().resolve()
             if any((folder / ".git").exists() for folder in (out.parent, *out.parents)):
