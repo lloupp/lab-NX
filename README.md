@@ -1,41 +1,31 @@
 # lab-NX
 
-Laboratório de desenvolvimento, execução e diagnóstico de aplicativos homebrew e ports para Nintendo Switch.
+Test-first Nintendo Switch porting laboratory. **Not** an automatic Xbox 360/PS3 game converter.
 
-## Objetivo
-Criar um pipeline reproduzível: **código-fonte → compilação ARM64 (devkitPro/libnx) → NRO → execução no Eden → análise de logs/capturas → validação no Nintendo Switch físico**.
+## M1 — Xbox Live Arcade STFS/XEX
 
-O laboratório não é um emulador novo nem converte jogos de Xbox 360/PS3 automaticamente. Integra ferramentas externas e testes por etapas.
+A user-provided Castle Crashers XBLA package was inspected privately:
+716 STFS entries, `default.xex` extracted (765,952 bytes) and its XEX2 header parsed.
+No commercial files are committed.
 
-## Componentes previstos
+Use Python 3.10+ on a locally extracted STFS file:
 
-- **devkitPro + libnx + SDL2/deko3d:** compilação e APIs do Switch.
-- **Eden:** execução e depuração em emulador, como dependência externa.
-- **nsemu:** executor experimental alternativo, quando aplicável.
-- **nxlab (Python):** diagnósticos, build, testes, registro de logs e relatórios.
-- **Pong SDL2:** jogo piloto para verificar gráficos, entrada, física e ciclo de execução.
-- **Nintendo Switch V2:** validação final em hardware real.
+```sh
+python3 -m nxlab inspect-stfs /private/584108B7.stfs --report /private/inventory.json
+python3 -m nxlab extract-xex /private/584108B7.stfs /private/default.xex
+python3 -m nxlab inspect-xex /private/default.xex
+python3 -m unittest discover -s tests -v
+```
 
-## Evidências e limites
+Use a local archive tool (e.g. `7z x your_archive.7z`) to unpack an XBLA 7z before inspection. The STFS content may reside under `584108B7/000D0000/` with a long filename.
 
-Na validação local inicial do Pong, passaram 10 testes do orquestrador e os testes de física, renderização SDL2 em Linux, execução de 180 quadros, movimento via teclado e pausa.
+### Safety and limitations
+- All processing is local and read-only with respect to the original package.
+- `extract-xex` extracts **only one named, contiguous** XEX to an explicit private path.
+- Fragmented STFS chains and alternate block-separation layouts have not been validated.
+- XEX2 inspection reads clear metadata; encrypted/compressed executable sections are not decoded.
+- No ISOs, ROMs, assets, private dumps, licenses, firmware or console keys are distributed.
+- Use only software and game files you are authorized to inspect.
+- Eden/devkitPro deployment, PowerPC → ARM64 recompilation and graphics compatibility remain later milestones.
 
-**Ainda não foram comprovadas:** compilação do arquivo `.nro`, execução no Eden e execução no Switch físico. Essas etapas precisam de devkitPro/Docker, Eden e testes no console real, respectivamente.
-
-## Regras do projeto
-
-- Não publicar ISOs, ROMs, XEX, EBOOT, NSP, chaves, firmware ou quaisquer recursos protegidos dos jogos.
-- Preservar as licenças e avisos de autoria dos componentes externos.
-- Manter logs, artefatos e dados privados em diretórios ignorados pelo Git.
-- Marcar claramente cada resultado como **testado**, **parcial** ou **não testado**.
-- Nunca confundir um teste de demonstração/sintético com execução do jogo original.
-
-## Próximas etapas
-
-1. Importar o código-fonte revisado do NX-Lab v0.2.1 e Pong.
-2. Validar toolchain ARM64 e geração de NRO.
-3. Executar smoke test no Eden e guardar capturas/logs.
-4. Executar o NRO no Switch físico com hbmenu/NetLoader.
-5. Adicionar adaptadores isolados para projetos maiores, sem distribuir arquivos dos jogos.
-
-Projeto de testes e interoperabilidade. Não afiliado à Nintendo.
+See [M1 findings](docs/CASTLE_CRASHERS_M1.md). Reference documentation: [Free60 STFS](https://github.com/Free60Project/wiki/blob/master/docs/System-Software/Formats/STFS.md), [XBLA-Extract](https://github.com/ryzendew/XBLA-Extract).
