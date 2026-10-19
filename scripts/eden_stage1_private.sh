@@ -19,7 +19,7 @@ if git -C "$(dirname "$REPORT")" rev-parse --is-inside-work-tree >/dev/null 2>&1
   exit 2
 fi
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export PYTHONPATH="$REPO_ROOT:$PYTHONPATH"
+export PYTHONPATH="$REPO_ROOT"
 if [[ -z "$(printenv DISPLAY || true)" ]]; then
   echo "Eden requires a graphical DISPLAY (desktop X11 or Xvfb)" >&2
   exit 2
