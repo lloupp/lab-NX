@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from nxlab.rex_native import NativeBuildError, build_private, install_hints, private_workspace
+from nxlab.rex_native import NativeBuildError, build_private, install_hints, private_workspace, enable_gpu_plugin
 
 
 class NativeTests(unittest.TestCase):
@@ -89,6 +89,19 @@ else:
             xex.write_bytes(b"not XEX2")
             with self.assertRaises(NativeBuildError):
                 build_private(xex, root / "work", root / "sdk", build=False)
+
+    def test_gpu_plugin_cmake_staging(self):
+        with TemporaryDirectory() as directory:
+            project = Path(directory) / "CMakeLists.txt"
+            project.write_text("add_executable(castlecrashers main.cpp)\n"
+                               "rexglue_setup_target(castlecrashers)\n")
+            enable_gpu_plugin(project, "xenos")
+            self.assertIn("rexglue_setup_target(castlecrashers GPU_PLUGINS xenos)",
+                          project.read_text())
+            with self.assertRaises(NativeBuildError):
+                enable_gpu_plugin(project, "xenos")
+            with self.assertRaises(NativeBuildError):
+                enable_gpu_plugin(project, "other")
 
 
 if __name__ == "__main__":
