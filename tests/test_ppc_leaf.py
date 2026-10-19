@@ -1,5 +1,6 @@
 """All generated source in these tests is synthetic, not commercial game code."""
 import struct
+import shutil
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -63,5 +64,20 @@ class LiftTests(unittest.TestCase):
             self.assertFalse(report['function_boundary_proven'])
             with self.assertRaises(LiftError):
                 lift_and_test(source,0x82005000,3,root/'private')
+
+
+    @unittest.skipUnless(shutil.which('clang++'), 'Clang target cross-compiler missing')
+    def test_synthetic_arm64_object(self):
+        with TemporaryDirectory() as td:
+            root=Path(td)
+            source=root/'s.pe'
+            source.write_bytes(make_pe([0x38630068,0x4e800020]))
+            report=lift_and_test(source,0x82005000,2,root/'private',arm64=True)
+            self.assertEqual(report['arm64_cross_compile']['kind'],
+                             'ELF64 AArch64 relocatable')
+            self.assertFalse(report['arm64_cross_compile']['switch_nro'])
+            self.assertFalse(report['arm64_cross_compile']['arm64_executed'])
+            self.assertEqual(int.from_bytes((root/'private'/'guest_arm64.o').read_bytes()[18:20],
+                                            'little'),183)
 
 if __name__=='__main__':unittest.main()
