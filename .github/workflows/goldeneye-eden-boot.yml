@@ -44,7 +44,8 @@ jobs:
           export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
           export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
           export SDL_AUDIODRIVER=dummy
-          xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' bash -ec '
+          timeout --signal=TERM --kill-after=4s 85s \
+            xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' bash -ec '
             ./squashfs-root/AppRun -g "$PWD/nxlab/switch_loader/goldeneye-nx-loader.nro" \
               > eden-evidence/stdout.txt 2>&1 &
             app=$!
@@ -57,7 +58,7 @@ jobs:
             scrot -o eden-evidence/after38s.png || true
             kill "$app" 2>/dev/null || true
             wait "$app" || true
-          '
+          ' || echo 'Eden startup timed out or exited; preserving logs/captures'
           cp "$XDG_DATA_HOME/eden/log/eden_log.txt" eden-evidence/eden_log.txt || true
           if [ -f eden-evidence/eden_log.txt ]; then
             grep -E 'Loading GoldenEye NX Loader|Booting game|RendererVulkan|Error|Critical' \
