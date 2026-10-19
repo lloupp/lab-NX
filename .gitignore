@@ -1,0 +1,11 @@
+# Keep commercial PS2 game images and archives outside the public repository.
+/private/
+/disc/
+/iso/
+*.iso
+*.7z
+*.7z.t0.*
+*.7z.???
+*.cue
+*.chd
+*.cso
