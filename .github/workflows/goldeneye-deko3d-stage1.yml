@@ -43,3 +43,68 @@ jobs:
             nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
             nxlab/switch_deko_smoke/romfs/shaders/*.dksh
           if-no-files-found: error
+
+  eden-vulkan:
+    needs: dksh-and-nro
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: goldeneye-deko3d-real-arm64-nro-and-dksh
+          path: nro-dist
+      - name: Install software Vulkan, virtual display, and capture tools
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            mesa-vulkan-drivers vulkan-tools xvfb xauth xdotool scrot \
+            libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0
+          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json vulkaninfo --summary
+          file nro-dist/goldeneye-deko-smoke.nro
+      - name: Obtain official Eden 0.2.1 and extract its Linux AppImage
+        run: |
+          curl -fLsS --retry 3 --connect-timeout 20 --max-time 240 \
+            https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-clang-pgo.AppImage \
+            -o Eden.AppImage
+          chmod +x Eden.AppImage
+          ./Eden.AppImage --appimage-extract > /tmp/eden-extract.log 2>&1
+          test -x squashfs-root/AppRun
+      - name: Execute actual Switch GPU commands under Eden and capture evidence
+        run: |
+          mkdir -p eden-evidence
+          export HOME="$PWD/eden-home"
+          export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share"
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+          export QT_QPA_PLATFORM=xcb
+          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+          export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
+          export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe SDL_AUDIODRIVER=dummy
+          timeout --signal=TERM --kill-after=4s 90s \
+            xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' bash -ec '
+              ./squashfs-root/AppRun -g "$PWD/nro-dist/goldeneye-deko-smoke.nro" \
+                > eden-evidence/stdout.txt 2>&1 &
+              app=$!
+              sleep 7
+              xdotool mousemove 755 335 click 1 || true
+              sleep 17
+              scrot -o eden-evidence/after24s.png || true
+              sleep 16
+              scrot -o eden-evidence/after40s.png || true
+              kill "$app" 2>/dev/null || true
+              wait "$app" || true
+            ' || echo "Eden exited or timed out; preserving evidence"
+          find "$XDG_DATA_HOME/eden" -maxdepth 6 -name 'deko_boot_trace.txt' -print \
+             -exec cp {} eden-evidence/guest_deko_trace.txt \; || true
+          cp "$XDG_DATA_HOME/eden/log/eden_log.txt" eden-evidence/eden_log.txt || true
+          echo "---- In-guest trace ----"
+          cat eden-evidence/guest_deko_trace.txt 2>/dev/null || true
+          echo "---- Eden relevant events ----"
+          grep -Ei 'deko|gpu|vulkan|booting game|error|fatal' \
+            eden-evidence/eden_log.txt | tail -70 || true
+          echo 'No game ROM in CI. Visible triangle proves GPU diagnostic only.'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: goldeneye-deko3d-eden-actual-execution
+          path: eden-evidence/
+          if-no-files-found: warn
