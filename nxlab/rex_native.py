@@ -15,8 +15,11 @@ import re
 import shutil
 import subprocess
 import sys
-import tomllib
 import uuid
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 
 class NativeBuildError(ValueError):
