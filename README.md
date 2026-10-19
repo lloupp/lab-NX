@@ -2,30 +2,49 @@
 
 Test-first Nintendo Switch porting laboratory. **Not** an automatic Xbox 360/PS3 game converter.
 
-## M1 — Xbox Live Arcade STFS/XEX
+## One-command Xbox preflight (M1 + M2)
 
-A user-provided Castle Crashers XBLA package was inspected privately:
-716 STFS entries, `default.xex` extracted (765,952 bytes) and its XEX2 header parsed.
-No commercial files are committed.
+Python 3.10+; no dependencies for metadata inspection. First unpack your authorized XBLA `.7z` file locally, for example with `7z x "Castle Crashers.7z"`. Locate the large STFS file under `584108B7/000D0000/`.
 
-Use Python 3.10+ on a locally extracted STFS file:
+```bash
+python3 -m nxlab.auto \
+  --input "/home/user/private/584108B7.stfs" \
+  --workspace "/home/user/labnx-private" \
+  --project castle_crashers
+```
 
-```sh
-python3 -m nxlab inspect-stfs /private/584108B7.stfs --report /private/inventory.json
-python3 -m nxlab extract-xex /private/584108B7.stfs /private/default.xex
-python3 -m nxlab inspect-xex /private/default.xex
+The workflow identifies the STFS, extracts the single contiguous `default.xex` into the **private workspace**, inspects its XEX2 headers/imports, and saves `runs/<id>/report.json`. The source file is never modified.
+
+To **attempt** codegen with a locally installed ReXGlue:
+
+```bash
+python3 -m nxlab.auto \
+  --input "/home/user/private/584108B7.stfs" \
+  --workspace "/home/user/labnx-private" \
+  --project castle_crashers \
+  --codegen \
+  --rexglue /opt/rexglue/bin/rexglue
+```
+
+The ReXGlue bridge detects the newer `--project-name/--xex-path/--project-root` CLI, creates a private project, and calls `codegen`. If ReXGlue is missing or its CLI differs, it **blocks** the step and records a diagnostic rather than pretending success.
+
+Exit codes: `0` = requested steps passed; `2` = failed step; `3` = blocked by a missing/incompatible SDK. Logs and generated C++ stay private. A codegen pass **does not** mean native functions executed, Xbox imports were solved, or that a Switch NRO exists.
+
+## Individual M1/M2 commands
+
+```bash
+python3 -m nxlab inspect-stfs /private/game.stfs --report /private/inventory.json
+python3 -m nxlab extract-xex /private/game.stfs /private/default.xex
+python3 -m nxlab.m2 /private/default.xex --report /private/m2.json
 python3 -m unittest discover -s tests -v
 ```
 
-Use a local archive tool (e.g. `7z x your_archive.7z`) to unpack an XBLA 7z before inspection. The STFS content may reside under `584108B7/000D0000/` with a long filename.
+## Constraints
 
-### Safety and limitations
-- All processing is local and read-only with respect to the original package.
-- `extract-xex` extracts **only one named, contiguous** XEX to an explicit private path.
-- Fragmented STFS chains and alternate block-separation layouts have not been validated.
-- XEX2 inspection reads clear metadata; encrypted/compressed executable sections are not decoded.
-- No ISOs, ROMs, assets, private dumps, licenses, firmware or console keys are distributed.
-- Use only software and game files you are authorized to inspect.
-- Eden/devkitPro deployment, PowerPC → ARM64 recompilation and graphics compatibility remain later milestones.
+- No commercial game file, XEX, asset, key, license or dump belongs in the GitHub repository.
+- Workspace MUST be outside any Git working tree.
+- The code only supports contiguous STFS extraction and does not extract a `.7z` itself.
+- No XEX payload decryption, LZX image extraction, ordinals resolution, runtime bridge, graphics translation, ARM64 NRO or actual Switch gameplay are yet proven.
+- Synthetic mock ReXGlue tests only validate orchestration, not real PowerPC compilation.
 
-See [M1 findings](docs/CASTLE_CRASHERS_M1.md). Reference documentation: [Free60 STFS](https://github.com/Free60Project/wiki/blob/master/docs/System-Software/Formats/STFS.md), [XBLA-Extract](https://github.com/ryzendew/XBLA-Extract).
+See [M1](docs/CASTLE_CRASHERS_M1.md), [M2](docs/CASTLE_CRASHERS_M2.md), and [automation status](docs/PIPELINE_AUTOMATION.md).
