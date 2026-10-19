@@ -45,6 +45,13 @@ jobs:
           "$CLI" --version
           "$CLI" init --help
           "$CLI" codegen --help
+      - name: Export verified upstream SDK as short-lived CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rexglue-linux-amd64-pinned
+          path: ${{ runner.temp }}/rexglue-installed/
+          retention-days: 1
+          if-no-files-found: error
       - name: Verify no game binaries or execution claims
         run: |
           test ! -e default.xex
