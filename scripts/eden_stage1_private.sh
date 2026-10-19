@@ -14,6 +14,12 @@ if [[ -e "$REPORT" ]]; then
   echo "Choose a NEW private report directory; refusing overwrite" >&2
   exit 2
 fi
+if git -C "$(dirname "$REPORT")" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Private report directory must be outside Git" >&2
+  exit 2
+fi
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$REPO_ROOT:$PYTHONPATH"
 if [[ -z "$(printenv DISPLAY || true)" ]]; then
   echo "Eden requires a graphical DISPLAY (desktop X11 or Xvfb)" >&2
   exit 2
