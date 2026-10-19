@@ -21,7 +21,7 @@ def prepare(xex, sdmc_root):
         if any((parent / ".git").exists() for parent in (path,*path.parents)):
             raise ValueError("Game files must remain outside Git")
     info=inspect(original)
-    if info.get("execution",{}).get("title_id")!="584108B7":
+    if (info.get("execution") or {}).get("title_id")!="584108B7":
         raise ValueError("XEX is not Castle Crashers Title ID 584108B7")
     output=root/"switch"/"labnx"/"castle"/"default.xex"
     if output.exists() or output.is_symlink():
