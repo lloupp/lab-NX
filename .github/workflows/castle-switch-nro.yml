@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: castle-nx-stage0-nro
+          name: castle-nx-stage1-ppc-nro
           path: input
       - name: Fetch official Eden Linux v0.2.1 AppImage
         run: |
