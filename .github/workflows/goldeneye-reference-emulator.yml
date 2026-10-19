@@ -41,7 +41,12 @@ jobs:
             esac
             [ ! -f "$dep" ] || cp -L "$dep" portable/libs/ || true
           done
-          cp -a /usr/share/mupen64plus/. portable/data/ || true
+          for source in /usr/share/games/mupen64plus /usr/share/mupen64plus; do
+            [ ! -d "$source" ] || cp -a "$source"/. portable/data/
+          done
+          echo "Mupen64Plus data files:"
+          find portable/data -maxdepth 3 -type f -print | head -40
+          test "$(find portable/data -type f | wc -l)" -gt 0
           for pkg in mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice mupen64plus-input-sdl mupen64plus-audio-sdl; do
             cp /usr/share/doc/"$pkg"/copyright portable/licenses/"$pkg".txt || true
           done
