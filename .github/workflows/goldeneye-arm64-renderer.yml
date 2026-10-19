@@ -1,0 +1,45 @@
+name: GoldenEye real renderer ARM64 probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths:
+      - '.github/workflows/goldeneye-arm64-renderer.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/goldeneye-arm64-renderer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real-renderer-object:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin and fetch real GoldenEye PC Port source (no game ROM/assets)
+        run: |
+          mkdir upstream
+          git -C upstream init -q
+          git -C upstream remote add origin https://github.com/jkdansereau/goldeneye-pc-port.git
+          git -C upstream fetch --depth=1 origin fda76b69837e6c5aae436e0d3e798989e49b06d2
+          git -C upstream checkout -q --detach FETCH_HEAD
+          test "$(git -C upstream rev-parse HEAD)" = fda76b69837e6c5aae436e0d3e798989e49b06d2
+      - name: Compile actual GoldenEye graphics color-combiner to Switch ARM64
+        run: |
+          mkdir -p build-arm64
+          docker run --rm -v "$PWD:/work" -w /work \
+            -e DEVKITPRO=/opt/devkitpro \
+            devkitpro/devkita64:latest \
+            sh -ec '/opt/devkitpro/devkitA64/bin/aarch64-none-elf-g++ -std=gnu++20 -O2 -Wall -Wextra -Werror -c upstream/port/fast3d/gfx_cc.cpp -o build-arm64/gfx_cc.arm64.o'
+          test -s build-arm64/gfx_cc.arm64.o
+          readelf -h build-arm64/gfx_cc.arm64.o | grep -q 'AArch64'
+          file build-arm64/gfx_cc.arm64.o
+          echo "REAL renderer component builds for ARM64. Rendering API and GPU backend remain missing."
+      - name: Upload actual renderer ARM64 object for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: ge007-real-colorcombiner-arm64-object
+          path: build-arm64/gfx_cc.arm64.o
+          if-no-files-found: error
