@@ -7,6 +7,7 @@ on:
       - feat/automated-m2-pipeline
       - feat/reusable-recipe-supervisor
       - feat/bonsai-local-advisor
+      - feat/castle-playability-goals
   pull_request:
     branches:
       - main
@@ -14,6 +15,7 @@ on:
       - feat/castle-crashers-m2
       - feat/automated-m2-pipeline
       - feat/reusable-recipe-supervisor
+      - feat/bonsai-local-advisor
 jobs:
   tests:
     runs-on: ubuntu-latest
