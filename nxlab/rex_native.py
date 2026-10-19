@@ -71,7 +71,7 @@ def enable_gpu_plugin(cmake_file: Path, plugin: str) -> None:
         raise NativeBuildError("Only vetted ReXGlue Xenos GPU plugin is supported")
     cmake_file = Path(cmake_file)
     original = cmake_file.read_text(encoding="utf-8")
-    matches = re.findall(r"^rexglue_setup_target\\(([A-Za-z][A-Za-z0-9_]*)\\)$", original,
+    matches = re.findall(r"^rexglue_setup_target\(([A-Za-z][A-Za-z0-9_]*)\)$", original,
                          flags=re.MULTILINE)
     if len(matches) != 1:
         raise NativeBuildError("Cannot identify one unconfigured rexglue_setup_target")
