@@ -76,6 +76,15 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -y -qq imagemagick xdotool
           fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mesa-vulkan-drivers vulkan-tools
+          ICD="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
+          if [ -n "$ICD" ]; then
+            echo "Mesa software Vulkan ICD: $ICD" > evidence/graphics.txt
+          else
+            echo "No Mesa Lavapipe ICD" > evidence/graphics.txt
+          fi
+          vulkaninfo --summary > evidence/vulkan.txt 2>&1 || true
           Xvfb :99 -screen 0 1280x720x24 -nolisten tcp > evidence/xvfb.log 2>&1 &
           DISPLAY_PID=$!
           trap 'kill "$DISPLAY_PID" 2>/dev/null || true' EXIT
@@ -88,6 +97,7 @@ jobs:
             XDG_CACHE_HOME="$PWD/eden-home/cache" \
             XDG_RUNTIME_DIR="$PWD/eden-home/runtime" \
             QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy \
+            VK_DRIVER_FILES="$ICD" VK_ICD_FILENAMES="$ICD" \
             "$COMMAND" --null-render --game "$PWD/input/castle_nx_bootstrap.nro" \
             > evidence/eden.log 2>&1 &
           RUN_PID=$!
@@ -105,6 +115,7 @@ jobs:
           set -e
           echo "eden_exit_code=$CODE" >> evidence/result.txt
           echo "Screenshot does not alone prove NRO guest execution." >> evidence/result.txt
+          test ! -f eden-home/config/eden/qt-config.ini || cp eden-home/config/eden/qt-config.ini evidence/qt-config.ini
           find eden-home -type f \( -iname '*.log' -o -iname '*log*.txt' \) \
             -size -10M -exec sh -c 'cp "$1" evidence/"$(basename "$1")"' _ '{}' \; || true
           grep -Ri 'LABNX_CASTLE_STAGE0_MAIN_ENTERED' eden-home evidence || true
