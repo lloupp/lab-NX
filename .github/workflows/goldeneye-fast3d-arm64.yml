@@ -23,34 +23,30 @@ jobs:
           git -C upstream fetch -q --depth=1 origin fda76b69837e6c5aae436e0d3e798989e49b06d2
           git -C upstream checkout -q --detach FETCH_HEAD
           test "$(git -C upstream rev-parse HEAD)" = fda76b69837e6c5aae436e0d3e798989e49b06d2
-      - name: Cross-compile complete Fast3D RSP interpreter (REAL upstream code)
+      - name: Cross-compile full Fast3D interpreter using Switch SDK
         run: |
           mkdir -p build-arm64
           docker run --rm -v "$PWD:/work" -w /work -e DEVKITPRO=/opt/devkitpro \
             devkitpro/devkita64:latest sh -ec '
               COMP=/opt/devkitpro/devkitA64/bin/aarch64-none-elf-g++
-              CC=/opt/devkitpro/devkitA64/bin/aarch64-none-elf-gcc
-              STDDEF=$("$CC" -print-file-name=include/stddef.h)
-              SYSROOT=$("$CC" -print-sysroot)
-              echo "compiler stddef=$STDDEF sysroot=$SYSROOT"
-              test -f "$STDDEF"
-              HOSTINC=/opt/devkitpro/devkitA64/aarch64-none-elf/include
-              test -f "$HOSTINC/string.h"
-              test -f "$HOSTINC/stdlib.h"
-              printf "#include \"%s\"\\n" "$STDDEF" > upstream/port/include/hoststddef.h
-              printf "#include \"%s/string.h\"\\n" "$HOSTINC" > upstream/port/include/hoststring.h
-              printf "#include \"%s/stdlib.h\"\\n" "$HOSTINC" > upstream/port/include/hoststdlib.h
-              printf "#include \"%s/sched.h\"\\n" "$HOSTINC" > upstream/port/include/hostsched.h
+              # Upstream platform abstraction currently supports only PC OS.
+              # Patch the TEMPORARY checked-out copy without changing/vendorizing source.
+              sed -i "/#elif defined(__linux__)/i #elif defined(__SWITCH__)\\n  #define PLATFORM_SWITCH 1" upstream/port/include/platform.h
+              # Keep N64 headers AFTER system libc to prevent the N64
+              # stddef.h/string.h stubs from poisoning C++ newlib headers.
               "$COMP" -std=gnu++20 -O2 -fpermissive -fno-strict-aliasing -funsigned-char \
-                -DPORT=1 -D_LANGUAGE_C=1 -DVERSION_US -DLANG_US -DREFRESH_NTSC -DPLATFORM_64BIT=1 \
-                -I upstream/port/shim -I upstream -I upstream/include -I upstream/include/PR \
-                -I upstream/src -I upstream/src/game -I upstream/src/libultra \
+                -D__SWITCH__=1 -DPORT=1 -D_LANGUAGE_C=1 -DVERSION_US -DLANG_US \
+                -DREFRESH_NTSC -DPLATFORM_64BIT=1 \
                 -I upstream/port/include -I upstream/port/fast3d \
+                -idirafter upstream/port/shim -idirafter upstream \
+                -idirafter upstream/include -idirafter upstream/include/PR \
+                -idirafter upstream/src -idirafter upstream/src/game \
+                -idirafter upstream/src/libultra \
                 -c upstream/port/fast3d/gfx_pc.cpp -o build-arm64/gfx_pc.arm64.o
             '
           test -s build-arm64/gfx_pc.arm64.o
           readelf -h build-arm64/gfx_pc.arm64.o | grep -q 'AArch64'
-      - name: Upload genuine graphics interpreter object
+      - name: Upload original upstream Fast3D ARM64 object
         uses: actions/upload-artifact@v4
         with:
           name: ge007-fast3d-rsp-arm64
