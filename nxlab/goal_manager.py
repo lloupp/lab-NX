@@ -32,10 +32,11 @@ def plan(report: dict, advice: dict | None = None) -> dict:
 
 def run(source: Path, workspace: Path, *, recipe: str = "castle-crashers",
         codegen=False, bonsai=False, bonsai_url=None, model="bonsai-4b",
-        force=False):
+        force=False, rexglue='rexglue'):
     """Call existing supervisor once; never auto-retry unchanged failures."""
     from .supervisor import observe
     opts = {"profile": recipe, "codegen": codegen, "force": force,
+            "rexglue": rexglue,
             "bonsai": bonsai, "bonsai_model": model}
     if bonsai_url is not None:
         opts["bonsai_url"] = bonsai_url
@@ -63,12 +64,13 @@ def main(argv=None):
     parser.add_argument("--bonsai-url")
     parser.add_argument("--bonsai-model", default="bonsai-4b")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--rexglue", default="rexglue", help="CLI name or absolute SDK path")
     args = parser.parse_args(argv)
     try:
         result = run(args.input, args.workspace, recipe=args.recipe,
                      codegen=args.codegen, bonsai=args.bonsai,
                      bonsai_url=args.bonsai_url, model=args.bonsai_model,
-                     force=args.force)
+                     force=args.force, rexglue=args.rexglue)
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0 if result.get("state") == "evaluated" else 3
     except (OSError, ValueError) as error:
