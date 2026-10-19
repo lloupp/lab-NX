@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [feat/goldeneye-ptbr-localization]
-    paths: ['.github/workflows/goldeneye-eden-boot.yml']
+    paths: ['.github/workflows/goldeneye-eden-boot.yml', 'nxlab/switch_loader/**']
 permissions:
   contents: read
 jobs:
