@@ -63,6 +63,12 @@ jobs:
           chmod +x Eden.AppImage
           ./Eden.AppImage --appimage-extract >/dev/null
           find squashfs-root -type f \( -name eden-cli -o -name eden \) -print
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eden-public-linux-v0.2.1-appimage
+          path: Eden.AppImage
+          if-no-files-found: error
+          retention-days: 1
       - name: Attempt graphical Eden boot with Xvfb screenshots
         run: |
           set -euo pipefail
