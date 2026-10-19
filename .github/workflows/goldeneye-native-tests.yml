@@ -1,0 +1,41 @@
+name: GoldenEye PT-BR and native input
+on:
+  push:
+    branches:
+      - feat/goldeneye-ptbr-localization
+    paths:
+      - 'nxlab/goldeneye_*'
+      - 'nxlab/native/goldeneye_*'
+      - 'tests/test_goldeneye_*'
+      - 'tests/native/test_goldeneye_*'
+      - '.github/workflows/goldeneye-native-tests.yml'
+  pull_request:
+    paths:
+      - 'nxlab/goldeneye_*'
+      - 'nxlab/native/goldeneye_*'
+      - 'tests/test_goldeneye_*'
+      - 'tests/native/test_goldeneye_*'
+      - '.github/workflows/goldeneye-native-tests.yml'
+  workflow_dispatch:
+jobs:
+  goldeneye:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python ROM and input tests (synthetic, no commercial data)
+        run: python -m unittest discover -s tests -p 'test_goldeneye_*.py' -v
+      - name: Compile C native controller input, treat warnings as errors
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -I nxlab/native \
+            nxlab/native/goldeneye_switch_input.c \
+            tests/native/test_goldeneye_native_input.c -lm \
+            -o /tmp/goldeneye_native_input_test
+          /tmp/goldeneye_native_input_test
+      - name: Explicit validation boundary
+        run: |
+          echo "C input logic tested on Ubuntu, NOT compiled against libnx."
+          echo "No GoldenEye frames, PT-BR patch or physical Switch tests are performed."

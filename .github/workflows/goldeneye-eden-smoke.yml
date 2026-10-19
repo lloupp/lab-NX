@@ -1,0 +1,77 @@
+name: GoldenEye Eden Linux validation (no ROM in CI)
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths:
+      - '.github/workflows/goldeneye-eden-smoke.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/goldeneye-eden-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  eden-nro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual GoldenEye ROM-asset diagnostic Switch NRO
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" -w /work/nxlab/switch_loader \
+            -e DEVKITPRO=/opt/devkitpro \
+            devkitpro/devkita64:latest make -j2
+          test -s nxlab/switch_loader/goldeneye-nx-loader.nro
+          file nxlab/switch_loader/goldeneye-nx-loader.nro
+      - name: Download Eden v0.2.1 official stable amd64 AppImage
+        run: |
+          mkdir -p eden dist
+          curl -fLsS --retry 3 --retry-delay 3 --connect-timeout 20 --max-time 240 \
+            'https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-clang-pgo.AppImage' \
+            -o eden/Eden.AppImage
+          test "$(stat -c%s eden/Eden.AppImage)" -gt 30000000
+          sha256sum eden/Eden.AppImage > dist/eden_sha256.txt
+          chmod +x eden/Eden.AppImage
+          (cd eden && ./Eden.AppImage --appimage-extract > extract.log 2>&1)
+          test -x eden/squashfs-root/AppRun
+          cp eden/Eden.AppImage dist/
+      - name: Execute NRO in Eden via virtual display without game ROM
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            xvfb xauth imagemagick libgl1-mesa-dri libegl1 \
+            libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0
+          mkdir -p /tmp/eden-home
+          export HOME=/tmp/eden-home XDG_DATA_HOME=/tmp/eden-home/.local/share
+          export QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+          xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' sh -ec '
+            ./eden/squashfs-root/AppRun -g "$PWD/nxlab/switch_loader/goldeneye-nx-loader.nro" \
+              > "$PWD/dist/eden_stdout.log" 2>&1 &
+            pid=$!
+            sleep 28
+            import -window root "$PWD/dist/eden_xvfb_no_rom.png" || true
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" || true
+          '
+          test -s dist/eden_stdout.log
+          tail -180 dist/eden_stdout.log | sed -E 's/(prod\\.keys|title\\.keys).*/\\1 [omitted]/' || true
+          echo 'No commercial ROM or decryption keys available in CI.'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: goldeneye-eden-smoke-evidence
+          path: |
+            dist/eden_stdout.log
+            dist/eden_xvfb_no_rom.png
+            dist/eden_sha256.txt
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: eden-v0.2.1-official-linux-appimage
+          path: dist/Eden.AppImage
+          if-no-files-found: error

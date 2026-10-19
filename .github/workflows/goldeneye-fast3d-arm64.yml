@@ -1,0 +1,54 @@
+name: GoldenEye Fast3D full ARM64 compile
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths:
+      - '.github/workflows/goldeneye-fast3d-arm64.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/goldeneye-fast3d-arm64.yml'
+permissions:
+  contents: read
+jobs:
+  real-fast3d-arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned upstream real game port code
+        run: |
+          git init -q upstream
+          git -C upstream remote add origin https://github.com/jkdansereau/goldeneye-pc-port.git
+          git -C upstream fetch -q --depth=1 origin fda76b69837e6c5aae436e0d3e798989e49b06d2
+          git -C upstream checkout -q --detach FETCH_HEAD
+          test "$(git -C upstream rev-parse HEAD)" = fda76b69837e6c5aae436e0d3e798989e49b06d2
+      - name: Cross-compile full Fast3D interpreter using Switch SDK
+        run: |
+          mkdir -p build-arm64
+          docker run --rm -v "$PWD:/work" -w /work -e DEVKITPRO=/opt/devkitpro \
+            devkitpro/devkita64:latest sh -ec '
+              COMP=/opt/devkitpro/devkitA64/bin/aarch64-none-elf-g++
+              # Upstream platform abstraction currently supports only PC OS.
+              # Patch the TEMPORARY checked-out copy without changing/vendorizing source.
+              sed -i "/#elif defined(__linux__)/i #elif defined(__SWITCH__)\\n  #define PLATFORM_SWITCH 1" upstream/port/include/platform.h
+              # Keep N64 headers AFTER system libc to prevent the N64
+              # stddef.h/string.h stubs from poisoning C++ newlib headers.
+              "$COMP" -std=gnu++20 -O2 -fpermissive -fno-strict-aliasing -funsigned-char \
+                -D__SWITCH__=1 -DPORT=1 -D_LANGUAGE_C=1 -DVERSION_US -DLANG_US \
+                -DREFRESH_NTSC -DPLATFORM_64BIT=1 \
+                -I upstream/port/include -I upstream/port/fast3d \
+                -idirafter upstream/port/shim -idirafter upstream \
+                -idirafter upstream/include -idirafter upstream/include/PR \
+                -idirafter upstream/src -idirafter upstream/src/game \
+                -idirafter upstream/src/libultra \
+                -c upstream/port/fast3d/gfx_pc.cpp -o build-arm64/gfx_pc.arm64.o
+            '
+          test -s build-arm64/gfx_pc.arm64.o
+          readelf -h build-arm64/gfx_pc.arm64.o | grep -q 'AArch64'
+      - name: Upload original upstream Fast3D ARM64 object
+        uses: actions/upload-artifact@v4
+        with:
+          name: ge007-fast3d-rsp-arm64
+          path: build-arm64/gfx_pc.arm64.o
+          if-no-files-found: error

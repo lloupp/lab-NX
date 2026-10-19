@@ -1,0 +1,59 @@
+name: GoldenEye N64 private ROM reference capture tool
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths: ['.github/workflows/goldeneye-reference-emulator.yml']
+  pull_request:
+    paths: ['.github/workflows/goldeneye-reference-emulator.yml']
+permissions:
+  contents: read
+jobs:
+  ubuntu-emulator-portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install open-source N64 emulator packages; no ROM at build time
+        run: |
+          sudo add-apt-repository -y universe
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice \
+            mupen64plus-input-sdl mupen64plus-audio-sdl mupen64plus-data
+      - name: Export portable binaries, plugins, configuration, licenses
+        run: |
+          set -euo pipefail
+          mkdir -p portable/bin portable/libs portable/plugins portable/data portable/licenses
+          BIN=$(command -v mupen64plus || echo /usr/games/mupen64plus)
+          test -x "$BIN"
+          cp "$BIN" portable/bin/mupen64plus
+          cp -L /usr/lib/x86_64-linux-gnu/libmupen64plus.so.2 portable/libs/libmupen64plus.so.2
+          cp -L /usr/lib/x86_64-linux-gnu/mupen64plus/*.so portable/plugins/
+          test "$(find portable/plugins -name '*.so' | wc -l)" -ge 4
+          # Bundle shared-library dependencies of core/plugins for isolated replay.
+          # Exclude glibc / OpenGL display drivers so the destination uses its own X server + Mesa.
+          for shared in portable/libs/*.so* portable/plugins/*.so portable/bin/mupen64plus; do
+            ldd "$shared" | awk '/=> \/[^ ]+/ {print $3}' || true
+          done | sort -u | while read -r dep; do
+            case "$(basename "$dep")" in
+              libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|libresolv.so.*|libGL*|libEGL*|libgbm*|libdrm*|libX*|libwayland*|libstdc++*|libgcc_s*|ld-linux*) continue ;;
+            esac
+            [ ! -f "$dep" ] || cp -L "$dep" portable/libs/ || true
+          done
+          for source in /usr/share/games/mupen64plus /usr/share/mupen64plus; do
+            [ ! -d "$source" ] || cp -a "$source"/. portable/data/
+          done
+          echo "Mupen64Plus data files:"
+          find portable/data -maxdepth 3 -type f -print | head -40
+          test "$(find portable/data -type f | wc -l)" -gt 0
+          for pkg in mupen64plus-ui-console mupen64plus-rsp-hle mupen64plus-video-rice mupen64plus-input-sdl mupen64plus-audio-sdl; do
+            cp /usr/share/doc/"$pkg"/copyright portable/licenses/"$pkg".txt || true
+          done
+          ldd portable/bin/mupen64plus
+          echo "No ROM files or video captures are published from CI."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-reference-n64-emulator-linux-x86_64
+          path: portable/
+          if-no-files-found: error

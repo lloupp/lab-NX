@@ -1,0 +1,88 @@
+name: GoldenEye engine ARM64 path
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-ptbr-localization]
+    paths:
+      - 'nxlab/native/goldeneye_rom_runtime.*'
+      - 'nxlab/native/goldeneye_rom_sprite.*'
+      - 'nxlab/native/goldeneye_switch_*'
+      - 'nxlab/switch_loader/**'
+      - 'tests/native/test_goldeneye_rom_runtime.c'
+      - 'tests/native/test_goldeneye_rom_sprite.c'
+      - '.github/workflows/goldeneye-engine-path.yml'
+  pull_request:
+    paths:
+      - 'nxlab/native/goldeneye_rom_runtime.*'
+      - 'nxlab/native/goldeneye_switch_*'
+      - 'nxlab/switch_loader/**'
+      - 'tests/native/test_goldeneye_rom_runtime.c'
+      - '.github/workflows/goldeneye-engine-path.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  host-rom-loader:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test ROM loader without distributing a game
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -I nxlab/native nxlab/native/goldeneye_rom_runtime.c \
+            tests/native/test_goldeneye_rom_runtime.c \
+            -o /tmp/ge_rom_test
+          /tmp/ge_rom_test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -I nxlab/native nxlab/native/goldeneye_rom_sprite.c \
+            tests/native/test_goldeneye_rom_sprite.c \
+            -o /tmp/ge_sprite_test
+          /tmp/ge_sprite_test
+          echo "The real US ROM was separately validated in private local tests."
+
+  switch-nro-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile real ARM64 .nro using official devkitPro image
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" -w /work/nxlab/switch_loader \
+            -e DEVKITPRO=/opt/devkitpro \
+            devkitpro/devkita64:latest make -j2
+          test -s nxlab/switch_loader/goldeneye-nx-loader.nro
+          file nxlab/switch_loader/goldeneye-nx-loader.nro
+      - name: Upload ROM-free ARM64 original-asset display NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-nx-first-pixels-nro
+          path: nxlab/switch_loader/goldeneye-nx-loader.nro
+          if-no-files-found: error
+
+  host-upstream-engine-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Install host dependencies for actual GoldenEye game source
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake build-essential libsdl2-dev libgl1-mesa-dev zlib1g-dev
+      - name: Check out pinned GoldenEye PC Port (third-party source stays out of lab-NX)
+        run: |
+          mkdir upstream
+          git -C upstream init -q
+          git -C upstream remote add origin https://github.com/jkdansereau/goldeneye-pc-port.git
+          git -C upstream fetch --depth=1 origin fda76b69837e6c5aae436e0d3e798989e49b06d2
+          git -C upstream checkout -q --detach FETCH_HEAD
+          test "$(git -C upstream rev-parse HEAD)" = fda76b69837e6c5aae436e0d3e798989e49b06d2
+      - name: Compile REAL reconstructed GoldenEye game engine for host
+        run: |
+          cmake -S upstream -B build-pc -DROMID=ntsc-final -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-pc --parallel 2
+      - name: Check game executable exists, do not claim gameplay without ROM
+        run: |
+          test -s build-pc/ge007.x86_64
+          file build-pc/ge007.x86_64
+          echo "Real GoldenEye source compiled for host; NOT Switch and NOT gameplay."
