@@ -1,0 +1,9 @@
+# Verified Castle Crashers Xbox 360 XEX (Title ID 584108B7).
+# ReXGlue 0.10.0.24-dev.gbd833a2.
+# First target is a real PPC tail-branch destination missing from auto discovery.
+# Second entry corrects a truncated function extent; three internal labels
+# otherwise disappear from generated C++ (0x82112F70/78/90).
+# These are game-specific address hints, NOT executable game code.
+[functions]
+0x820E15E8 = {}
+0x82112BC0 = { size = 988 }
