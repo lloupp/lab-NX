@@ -169,20 +169,28 @@ static bool ge_graphics_init(void)
 
     dkMemBlockMakerDefaults(&memory_maker, g_gpu.device, GE_CMD_BYTES);
     memory_maker.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached;
+    ge_trace("command-memory-alloc-start");
     g_gpu.command_mem = dkMemBlockCreate(&memory_maker);
+    ge_trace("command-memory-alloc-returned");
     if (!g_gpu.command_mem) { ge_trace("command-memory-failed"); return false; }
 
     DkCmdBufMaker command_maker;
     dkCmdBufMakerDefaults(&command_maker, g_gpu.device);
+    ge_trace("command-buffer-create-start");
     g_gpu.command_buffer = dkCmdBufCreate(&command_maker);
+    ge_trace("command-buffer-create-returned");
     if (!g_gpu.command_buffer) { ge_trace("command-buffer-failed"); return false; }
+    ge_trace("command-buffer-add-memory-start");
     dkCmdBufAddMemory(g_gpu.command_buffer, g_gpu.command_mem, 0, GE_CMD_BYTES);
+    ge_trace("command-buffer-add-memory-returned");
 
     for (unsigned i = 0; i < GE_NUM_FRAMES; ++i) {
+        ge_trace("bind-render-target-start");
         DkImageView view;
         dkImageViewDefaults(&view, &g_gpu.frames[i]);
         dkCmdBufBindRenderTarget(g_gpu.command_buffer, &view, NULL);
         g_gpu.bind_target[i] = dkCmdBufFinishList(g_gpu.command_buffer);
+        ge_trace("bind-render-target-finished");
     }
 
     DkViewport viewport = { 0.f, 0.f, (float)GE_FB_WIDTH, (float)GE_FB_HEIGHT, 0.f, 1.f };
@@ -195,6 +203,7 @@ static bool ge_graphics_init(void)
     dkColorStateDefaults(&color);
     dkColorWriteStateDefaults(&write);
 
+    ge_trace("render-commands-recording-start");
     dkCmdBufSetViewports(g_gpu.command_buffer, 0, &viewport, 1);
     dkCmdBufSetScissors(g_gpu.command_buffer, 0, &scissor, 1);
     dkCmdBufClearColorFloat(g_gpu.command_buffer, 0, DkColorMask_RGBA,
@@ -205,11 +214,14 @@ static bool ge_graphics_init(void)
     dkCmdBufBindColorWriteState(g_gpu.command_buffer, &write);
     dkCmdBufDraw(g_gpu.command_buffer, DkPrimitive_Triangles, 3, 1, 0, 0);
     g_gpu.render = dkCmdBufFinishList(g_gpu.command_buffer);
+    ge_trace("render-commands-recorded");
 
     DkQueueMaker queue_maker;
     dkQueueMakerDefaults(&queue_maker, g_gpu.device);
     queue_maker.flags = DkQueueFlags_Graphics;
+    ge_trace("queue-create-start");
     g_gpu.queue = dkQueueCreate(&queue_maker);
+    ge_trace("queue-create-returned");
     if (!g_gpu.queue) { ge_trace("queue-create-failed"); return false; }
     ge_trace("deko3d-ready");
     return true;
