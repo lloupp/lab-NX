@@ -6,6 +6,9 @@
 #define GAME_XEX "sdmc:/switch/labnx/castle/default.xex"
 int main(int argc,char **argv) {
     (void)argc; (void)argv;
+    /* Separate proof of ARM64 homebrew main from Eden GUI startup. */
+    static const char guest_enter[] = "LABNX_CASTLE_STAGE0_MAIN_ENTERED";
+    svcOutputDebugString(guest_enter, sizeof(guest_enter)-1);
     consoleInit(NULL);
     padConfigureInput(1,HidNpadStyleSet_NpadStandard);
     PadState pad;
