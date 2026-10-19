@@ -15,14 +15,14 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mesa-vulkan-drivers vulkan-tools
           ls -la /usr/share/vulkan/icd.d
-          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json vulkaninfo --summary
+          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json vulkaninfo --summary
       - name: Package Lavapipe and transitive shared libraries (no game content)
         run: |
           mkdir -p portable/lib portable/icd
           DRIVER=/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so
           test -f "$DRIVER"
           cp "$DRIVER" portable/lib/
-          cp /usr/share/vulkan/icd.d/lvp_icd.x86_64.json portable/icd/original_lvp_icd.json
+          cp /usr/share/vulkan/icd.d/lvp_icd.json portable/icd/original_lvp_icd.json
           ldd "$DRIVER" | tee portable/ldd.txt
           # Local runtime can resolve bundled Ubuntu libraries when host differs.
           ldd "$DRIVER" | awk '/=> \/[^ ]+/ {print $3}' | sort -u | while read -r dep; do
