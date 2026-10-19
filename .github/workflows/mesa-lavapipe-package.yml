@@ -1,0 +1,33 @@
+name: Pinned Mesa Lavapipe package (no game files)
+on:
+  push:
+    branches: [feat/castle-vulkan-lavapipe]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+
+jobs:
+  debian-lavapipe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download official Debian 13 package and verify SHA256
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/labnx-mesa"
+          cd "$RUNNER_TEMP/labnx-mesa"
+          curl -fsSL --retry 2 \
+            'https://deb.debian.org/debian/pool/main/m/mesa/mesa-vulkan-drivers_25.0.7-2+deb13u1_amd64.deb' \
+            -o mesa-vulkan-drivers.deb
+          echo 'caf2f7d296b7522efe74e40a74bce762a3ce84c33b53b5e54e1248ac2e0a13a5  mesa-vulkan-drivers.deb' | sha256sum -c
+          mkdir -p stage
+          dpkg-deb -x mesa-vulkan-drivers.deb stage
+          test -s stage/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so
+          test -s stage/usr/share/vulkan/icd.d/lvp_icd.json
+          echo 'Verified: Debian Mesa Lavapipe package; no game assets'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: labnx-debian13-lavapipe-deb
+          path: ${{ runner.temp }}/labnx-mesa/mesa-vulkan-drivers.deb
+          retention-days: 1
+          if-no-files-found: error
