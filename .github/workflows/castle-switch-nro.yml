@@ -42,3 +42,58 @@ jobs:
           path: switch/castle_bootstrap/castle_nx_bootstrap.nro
           if-no-files-found: error
           retention-days: 7
+
+  eden-stage0-diagnostic:
+    name: Try opening stage-0 NRO in Eden v0.2.1 (no game/keys)
+    needs: castle-switch-nro
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: castle-nx-stage0-nro
+          path: input
+      - name: Fetch official Eden Linux v0.2.1 AppImage
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 2 --max-time 220 \
+            "https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-gcc-standard.AppImage" \
+            --output Eden.AppImage
+          sha256sum Eden.AppImage | tee eden-appimage-sha256.txt
+          chmod +x Eden.AppImage
+          ./Eden.AppImage --appimage-extract >/dev/null
+          find squashfs-root -type f \( -name eden-cli -o -name eden \) -print
+      - name: Attempt Eden CPU boot with null renderer and isolated home
+        run: |
+          set -euo pipefail
+          mkdir -p evidence eden-home
+          CLI="$(find squashfs-root -type f -name eden-cli -print -quit)"
+          if [ -z "$CLI" ]; then
+            echo "BLOCKED: Eden AppImage does not contain eden-cli" | tee evidence/result.txt
+            exit 0
+          fi
+          chmod +x "$CLI"
+          set +e
+          timeout --signal=TERM --kill-after=2s 20s \
+            xvfb-run -a env HOME="$PWD/eden-home" \
+            XDG_CONFIG_HOME="$PWD/eden-home/config" \
+            XDG_DATA_HOME="$PWD/eden-home/data" \
+            XDG_CACHE_HOME="$PWD/eden-home/cache" \
+            SDL_AUDIODRIVER=dummy \
+            "$PWD/$CLI" --null-render --game "$PWD/input/castle_nx_bootstrap.nro" \
+            > evidence/eden-cli.log 2>&1
+          CODE=$?
+          set -e
+          echo "eden_exit_code=$CODE" | tee evidence/result.txt
+          echo "No keys, firmware, or commercial game was supplied." | tee -a evidence/result.txt
+          grep -Ei 'nro|homebrew|error|failed|launch|program|unsupported|keys|firmware|missing' evidence/eden-cli.log | tail -60 || true
+          echo "A timeout or running emulator alone DOES NOT verify guest execution." | tee -a evidence/result.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: castle-nx-eden-stage0-diagnostics
+          path: |
+            evidence/
+            eden-appimage-sha256.txt
+          if-no-files-found: warn
+          retention-days: 7
