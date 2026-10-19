@@ -1,9 +1,9 @@
-name: Python M1 tests
+name: Python M1 and M2 tests
 on:
   push:
-    branches: [feat/castle-crashers-m1]
+    branches: [feat/castle-crashers-m1, feat/castle-crashers-m2]
   pull_request:
-    branches: [main]
+    branches: [main, feat/castle-crashers-m1]
 jobs:
   tests:
     runs-on: ubuntu-latest
