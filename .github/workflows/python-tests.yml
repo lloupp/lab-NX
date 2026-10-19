@@ -10,6 +10,7 @@ on:
       - feat/castle-playability-goals
       - feat/xbla-archive-e2e
       - feat/xex-lzx-verified-chain
+      - feat/castle-real-powerpc-image
   pull_request:
     branches:
       - main
@@ -20,6 +21,7 @@ on:
       - feat/bonsai-local-advisor
       - feat/castle-playability-goals
       - feat/xbla-archive-e2e
+      - feat/xex-lzx-verified-chain
 jobs:
   tests:
     runs-on: ubuntu-latest
