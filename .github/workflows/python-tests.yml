@@ -8,6 +8,7 @@ on:
       - feat/reusable-recipe-supervisor
       - feat/bonsai-local-advisor
       - feat/castle-playability-goals
+      - feat/xbla-archive-e2e
   pull_request:
     branches:
       - main
@@ -16,6 +17,7 @@ on:
       - feat/automated-m2-pipeline
       - feat/reusable-recipe-supervisor
       - feat/bonsai-local-advisor
+      - feat/castle-playability-goals
 jobs:
   tests:
     runs-on: ubuntu-latest
@@ -31,3 +33,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Compile source
         run: python -m compileall -q nxlab
+      - name: Shell syntax for local SDK installers
+        run: |
+          bash -n scripts/install_rexglue_prebuilt.sh
+          bash -n scripts/rexglue_linux_local.sh
