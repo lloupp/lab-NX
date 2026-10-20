@@ -14,8 +14,13 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "goldeneye_fast3d_bridge.h"
+#include "goldeneye_n64_memory.h"
+#ifdef GE_GFX_ADAPTER
+#include "goldeneye_gfx_subset.h"
+#endif
 #include <sys/stat.h>
 
 #define GE_FB_WIDTH 1280
@@ -23,6 +28,9 @@
 #define GE_NUM_FRAMES 2
 #define GE_CODE_BYTES (64u * 1024u)
 #define GE_CMD_BYTES (16u * 1024u)
+#ifndef GE_QUEUE_CMD_BYTES
+#define GE_QUEUE_CMD_BYTES DK_QUEUE_MIN_CMDMEM_SIZE
+#endif
 #define GE_TRACE "sdmc:/switch/lab-nx/goldeneye/deko_boot_trace.txt"
 
 typedef struct {
@@ -65,6 +73,66 @@ static void ge_trace(const char *message)
     if (!file) return;
     fprintf(file, "%s\n", message);
     fclose(file);
+}
+
+static void ge_debug(void *user, const char *context, DkResult result, const char *message)
+{
+    (void)user;
+    char line[512];
+    snprintf(line, sizeof line, "deko-debug context=%s result=%u message=%s",
+             context ? context : "?", (unsigned)result, message ? message : "?");
+    ge_trace(line);
+}
+
+#ifdef GE_GFX_ADAPTER
+static bool ge_adapter_draw(void *user, const float *vbo, size_t count,
+                            size_t triangles, const ge_fast3d_profile *profile)
+{
+    size_t written = 0;
+    return ge_fast3d_unpack_rgb(vbo, count, triangles, profile, user, 3, &written)
+               == GE_F3D_OK && written == 3;
+}
+#endif
+
+static bool ge_upload_diagnostic(void *vertex_cpu)
+{
+    /* Exercise the translated N64 arena on ARM64 without fixed mappings.
+     * The content is still generated diagnostic data, never a game DL. */
+    void *ram = calloc(1, GE_N64_RDRAM_SIZE);
+    if (!ram) return false;
+    ge_n64_memory memory;
+    void *physical = NULL, *kseg = NULL;
+    bool ok = ge_n64_memory_init(&memory, ram, GE_N64_RDRAM_SIZE) == GE_N64_OK &&
+        ge_n64_memory_span(&memory, 0x50000, sizeof g_triangle_fast3d, &physical) == GE_N64_OK &&
+        ge_n64_memory_span(&memory, GE_N64_K0_BASE + 0x50000,
+                           sizeof g_triangle_fast3d, &kseg) == GE_N64_OK && physical == kseg;
+    if (ok) {
+        memcpy(physical, g_triangle_fast3d, sizeof g_triangle_fast3d);
+        ge_trace("n64-translated-arena-alias-verified");
+#ifdef GE_GFX_ADAPTER
+        ge_gfx_sink sink = {vertex_cpu, ge_adapter_draw};
+        ok = ge_gfx_subset_attach(sink, GE_FB_WIDTH, GE_FB_HEIGHT);
+        struct GfxRenderingAPI *api = ge_gfx_subset_api();
+        if (ok) {
+            api->init();
+            api->start_frame();
+            api->create_and_load_new_shader(0x1000, 0);
+            api->set_viewport(0, 0, GE_FB_WIDTH, GE_FB_HEIGHT);
+            api->set_scissor(0, 0, GE_FB_WIDTH, GE_FB_HEIGHT);
+            api->draw_triangles(kseg, 21, 1);
+            api->end_frame();
+            ok = ge_gfx_subset_status() == GE_GFX_READY;
+            ge_trace(ok ? "gfx-rendering-api-subset-vbo-ready" : ge_gfx_subset_last_operation());
+        }
+#else
+        const ge_fast3d_profile profile = {1, 0, 0, 0, 0};
+        size_t written = 0;
+        ok = ge_fast3d_unpack_rgb(kseg, 21, 1, &profile, vertex_cpu, 3, &written)
+                 == GE_F3D_OK && written == 3;
+#endif
+    }
+    free(ram);
+    return ok;
 }
 
 static bool ge_load_shader(DkShader *shader, const char *path)
@@ -140,6 +208,7 @@ static bool ge_graphics_init(void)
 {
     DkDeviceMaker maker;
     dkDeviceMakerDefaults(&maker);
+    maker.cbDebug = ge_debug;
     g_gpu.device = dkDeviceCreate(&maker);
     if (!g_gpu.device) { ge_trace("device-create-failed"); return false; }
     ge_trace("device-created");
@@ -195,12 +264,7 @@ static bool ge_graphics_init(void)
     if (!g_gpu.vertex_mem) { ge_trace("vertex-memory-failed"); return false; }
     void *vertex_cpu = dkMemBlockGetCpuAddr(g_gpu.vertex_mem);
     if (!vertex_cpu) { ge_trace("vertex-address-failed"); return false; }
-    const ge_fast3d_profile profile = { 1, 0, 0, 0, 0 };
-    size_t vertices_written = 0;
-    const ge_fast3d_result bridge_result = ge_fast3d_unpack_rgb(
-        g_triangle_fast3d, sizeof(g_triangle_fast3d)/sizeof(float), 1,
-        &profile, vertex_cpu, 3, &vertices_written);
-    if (bridge_result != GE_F3D_OK || vertices_written != 3) {
+    if (!ge_upload_diagnostic(vertex_cpu)) {
         ge_trace("fast3d-bridge-failed");
         return false;
     }
@@ -275,7 +339,7 @@ static bool ge_graphics_init(void)
      * uses neither compute nor depth nor shader scratch allocations. Keep
      * this queue configuration separate from the real game renderer. */
     queue_maker.flags = DkQueueFlags_Graphics | DkQueueFlags_DisableZcull;
-    queue_maker.commandMemorySize = DK_QUEUE_MIN_CMDMEM_SIZE;
+    queue_maker.commandMemorySize = GE_QUEUE_CMD_BYTES;
     queue_maker.perWarpScratchMemorySize = 0;
     ge_trace("queue-create-lean-start");
     g_gpu.queue = dkQueueCreate(&queue_maker);
@@ -300,6 +364,8 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
     fsdevMountSdmc();
+    /* A trace must describe this run, never append a stale success marker. */
+    remove(GE_TRACE);
     ge_trace("main-entered");
 
     Result romfs_result = romfsInit();
