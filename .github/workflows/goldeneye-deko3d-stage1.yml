@@ -101,7 +101,14 @@ jobs:
           echo "---- Eden relevant events ----"
           grep -Ei 'deko|gpu|vulkan|booting game|error|fatal' \
             eden-evidence/eden_log.txt | tail -70 || true
-          echo 'No game ROM in CI. Visible triangle proves GPU diagnostic only.'
+          echo 'No game ROM in CI. A visible triangle would prove GPU diagnostic only.'
+          # Boot and shader loading are NOT equivalent to a successfully
+          # submitted GPU frame. This job must fail until deko3d actually
+          # presents graphics in Eden. Evidence is uploaded even on failure.
+          if ! grep -qx 'first-deko-frame-submitted' eden-evidence/guest_deko_trace.txt 2>/dev/null; then
+            echo '::error::Guest never submitted a deko3d framebuffer in Eden'
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
