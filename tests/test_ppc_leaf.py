@@ -19,7 +19,8 @@ def make_pe(program):
     struct.pack_into('<I',data,opt+28,0x82000000)
     section=opt+224
     struct.pack_into('<8sIIIIIIHHI',data,section,b'.text\0\0\0',0x200,0x5000,0x200,0x400,0,0,0,0,0x60000020)
-    data[0x400:0x404]=b'\x48\x00\x00\x00'  # poison conventional disk PE offset\n    for n,word in enumerate(program):
+    data[0x400:0x404]=b'\x48\x00\x00\x00'  # poison conventional disk PE offset
+    for n,word in enumerate(program):
         data[0x5000+4*n:0x5004+4*n]=word.to_bytes(4,'big')
     return bytes(data)
 
