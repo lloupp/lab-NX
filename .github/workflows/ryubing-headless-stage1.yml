@@ -84,6 +84,46 @@ jobs:
             'LABNX_CASTLE_STAGE0_MAIN_ENTERED|LABNX_GUEST_PPC_LEAF_EXECUTED|Loading as Homebrew|Loaded|error|fail|exception|unhandled' \
             results/headless/emulator.log | tail -90 > results/interesting-lines.txt || true
           echo 'A successful Actions job does not prove guest execution; inspect actual markers.' >> results/scope.txt
+      - name: Download independently built public hbmenu NRO as emulator control
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --max-time 90 \
+            'https://github.com/switchbrew/nx-hbmenu/releases/download/v3.6.1/nx-hbmenu_v3.6.1.zip' \
+            -o results/public-hbmenu.zip
+          echo '4790c58fdd75c4bcc644fa8135fa11c380cb3ebaf685e400e336031972410ee7  results/public-hbmenu.zip' | sha256sum -c
+          MEMBER="$(unzip -Z -1 results/public-hbmenu.zip | grep -E '(^|/)hbmenu\.nro
+          path: results/
+          if-no-files-found: warn
+          retention-days: 7
+ | head -1)"
+          test -n "$MEMBER"
+          unzip -p results/public-hbmenu.zip "$MEMBER" > results/reference-hbmenu.nro
+          python3 switch/castle_bootstrap/tests/inspect_nro.py results/reference-hbmenu.nro \
+            > results/reference-header.txt
+          sha256sum results/reference-hbmenu.nro > results/reference-nro-sha256.txt
+          # Commercial content is never used here; reference is GPL homebrew.
+      - name: Independently verify Ryubing can load public reference NRO
+        run: |
+          set -euo pipefail
+          mkdir -p ryu-public-control
+          xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
+            env SDL_AUDIODRIVER=dummy \
+            python3 scripts/compare_emulator_memory.py \
+            --output results/reference-ryubing --seconds 35 --limit-mb 5500 -- \
+            dbus-run-session -- flatpak run \
+            --filesystem="$PWD/results":ro \
+            --filesystem="$PWD/ryu-public-control" \
+            io.github.ryubing.Ryujinx \
+            --no-gui --root-data-dir "$PWD/ryu-public-control" \
+            --graphics-backend OpenGl --audio-volume 0 \
+            "$PWD/results/reference-hbmenu.nro" \
+            > results/reference-report.json
+          grep -i -E 'Loading as Homebrew|not supported|started|process|exception|error|fail' \
+            results/reference-ryubing/emulator.log \
+            | tail -65 > results/reference-interesting-lines.txt || true
+          # Do not publish the third-party binary inside the artifact;
+          # all hashes, reports and screenshots remain available.
+          rm -f results/public-hbmenu.zip results/reference-hbmenu.nro
       - uses: actions/upload-artifact@v4
         if: always()
         with:
