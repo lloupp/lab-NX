@@ -11,6 +11,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Validate private authorized-game runner and PSS profiler
+        run: |
+          bash -n scripts/eden_stage1_private.sh
+          python3 -m py_compile scripts/compare_emulator_memory.py
       - name: Build unchanged ARM64 stage-1 NRO
         run: |
           docker run --rm --platform linux/amd64 \
