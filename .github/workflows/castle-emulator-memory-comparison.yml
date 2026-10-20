@@ -50,7 +50,7 @@ jobs:
       - name: Install X11 and software rendering requirements
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb imagemagick mesa-vulkan-drivers libfuse2t64
+          sudo apt-get install -y -qq xvfb xdotool imagemagick mesa-vulkan-drivers libfuse2t64
       - name: Prepare isolated Eden 0.2.1
         run: |
           set -euo pipefail
@@ -75,7 +75,7 @@ jobs:
             SDL_AUDIODRIVER=dummy \
             xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
             python3 scripts/compare_emulator_memory.py \
-            --output results/eden --seconds 25 --limit-mb 2800 -- \
+            --output results/eden --seconds 25 --limit-mb 2800 --dismiss-eden-keys -- \
             "$PWD/squashfs-root/AppRun" --null-render \
             --game "$PWD/input/castle_nx_bootstrap.nro" \
             > results/eden-summary.json
@@ -137,6 +137,9 @@ jobs:
               > results/ryubing-blocker.txt
             exit 0
           fi
+          # Avoid spurious low vm.max_map_count modal where permitted.
+          sudo sysctl -w vm.max_map_count=1048576 > results/max-map-count.txt 2>&1 || true
+          cat /proc/sys/vm/max_map_count >> results/max-map-count.txt
           mkdir -p ryu-profile
           # No copyrighted game, firmware, or console keys are installed.
           xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
