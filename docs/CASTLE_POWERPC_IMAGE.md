@@ -1,3 +1,5 @@
+**CORREÇÃO M4.4:** O PE produzido por descompactação XEX2 é uma imagem de MEMÓRIA mapeada por RVA, não um arquivo PE com seções na posição PointerToRawData. Desmontagens anteriores que usaram raw pointers estavam incorretas. Use a versão corrigida de nxlab/pe_elf.py. Veja docs/CASTLE_MAPPED_XEX_RVA_M4_4.md.
+
 # M2.6 — Castle Crashers original Xbox PowerPC image recovered
 
 ## Verified result (private, 19 Oct 2026)
