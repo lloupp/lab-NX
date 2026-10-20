@@ -15,6 +15,14 @@ Esta implementação **NÃO é o motor do GoldenEye**, nem um backend `GfxRender
 - `source/color_fsh.glsl`: cor interpolada de diagnóstico.
 - `source/main.c`: usa **DkDevice, DkImageLayout, DkImage, DkSwapchain, DkMemBlock, DkShader, DkCmdBuf, DkQueue**. Gera comandos de limpeza e triângulo; tenta apresentar quadros; mantém rastreamento em `sdmc:/switch/lab-nx/goldeneye/deko_boot_trace.txt`. Criação da fila usa a configuração enxuta `Graphics | DisableZcull`, command memory mínimo e sem scratch por warp. Não modifica o carregador da ROM existente.
 
+## Etapa adicional — vertex buffer de CPU para GPU (commit a23f513)
+
+- O triângulo não está mais embutido no GLSL: a CPU preenche um bloco de memória `DkMemBlock` com estruturas `GeDekoVertex` (posição 3 floats + cor RGB 3 floats).
+- O deko3d liga `DkVtxAttribState`, `DkVtxBufferState` e `DkBufExtents` por `dkCmdBufBindVtxBuffers`, criando uma entrada concreta para geometria proveniente do motor.
+- Os shaders DKSH recebem os atributos nos locais 0 e 1, compilados via `uam`.
+- **Build ARM64 e shaders aprovado** em https://github.com/lloupp/lab-NX/actions/runs/39346020067.
+- **Ainda não há primeira imagem de geometria** por causa do bloqueio de `dkQueueCreate`. A rotina atual usa três vértices sintéticos, não VBO extraído do Fast3D.
+
 ## Evidência real
 
 **Compilação ARM64 + DKSH: aprovado.** Builds oficiais em Docker devkitPro:
