@@ -1,0 +1,155 @@
+name: Compare Eden and Ryubing NRO boot memory (no games)
+on:
+  push:
+    branches: [feat/castle-eden-memory-analysis]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+
+jobs:
+  build-nro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify synthetic PowerPC guest interpreter
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -I switch/castle_bootstrap/include \
+            switch/castle_bootstrap/source/ppc_pe.c \
+            switch/castle_bootstrap/tests/test_ppc_pe.c \
+            -o /tmp/test_guest_ppc
+          /tmp/test_guest_ppc
+          python3 -m py_compile scripts/compare_emulator_memory.py
+      - name: Build actual ARM64 libnx NRO
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -e DEVKITPRO=/opt/devkitpro \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work/switch/castle_bootstrap \
+            devkitpro/devkita64:20260219 make -j2
+          python3 switch/castle_bootstrap/tests/inspect_nro.py \
+            switch/castle_bootstrap/castle_nx_bootstrap.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-stage1-original-nro
+          path: switch/castle_bootstrap/castle_nx_bootstrap.nro
+          retention-days: 4
+          if-no-files-found: error
+
+  eden:
+    needs: build-nro
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-stage1-original-nro
+          path: input
+      - name: Install X11 and software rendering requirements
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb imagemagick mesa-vulkan-drivers libfuse2t64
+      - name: Prepare isolated Eden 0.2.1
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --max-time 240 \
+            'https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-gcc-standard.AppImage' \
+            -o Eden.AppImage
+          sha256sum Eden.AppImage | tee eden-binary-sha256.txt
+          chmod +x Eden.AppImage
+          ./Eden.AppImage --appimage-extract >/dev/null
+          test -e squashfs-root/AppRun
+      - name: Profile Eden guest NRO boot, bounded resident RAM
+        run: |
+          set -euo pipefail
+          mkdir -p results eden-home/config eden-home/data eden-home/cache eden-home/runtime
+          chmod 700 eden-home/runtime
+          env HOME="$PWD/eden-home" \
+            XDG_CONFIG_HOME="$PWD/eden-home/config" \
+            XDG_DATA_HOME="$PWD/eden-home/data" \
+            XDG_CACHE_HOME="$PWD/eden-home/cache" \
+            XDG_RUNTIME_DIR="$PWD/eden-home/runtime" \
+            QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 \
+            SDL_AUDIODRIVER=dummy \
+            xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
+            python3 scripts/compare_emulator_memory.py \
+            --output results/eden --seconds 25 --limit-mb 2800 -- \
+            "$PWD/squashfs-root/AppRun" --null-render \
+            --game "$PWD/input/castle_nx_bootstrap.nro" \
+            > results/eden-summary.json
+          grep -R 'LABNX_GUEST_PPC_LEAF_EXECUTED' results/eden/ || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eden-memory-comparison
+          path: |
+            results/
+            eden-binary-sha256.txt
+          retention-days: 7
+
+  ryubing:
+    needs: build-nro
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-stage1-original-nro
+          path: input
+      - name: Install Flatpak and X11 dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatpak xvfb imagemagick dbus-x11 mesa-vulkan-drivers
+      - name: Try installing Ryubing community Flatpak
+        run: |
+          mkdir -p results
+          set +e
+          timeout 100s sudo flatpak remote-add --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo \
+            > results/ryubing-remote.log 2>&1
+          a=$?
+          if [ "$a" -eq 0 ]; then
+            timeout 400s sudo flatpak install -y --noninteractive \
+              flathub io.github.ryubing.Ryujinx \
+              > results/ryubing-install.log 2>&1
+            b=$?
+          else
+            b=97
+          fi
+          set -e
+          printf 'remote_code=%s\ninstall_code=%s\n' "$a" "$b" \
+            > results/ryubing-install-status.txt
+          flatpak info io.github.ryubing.Ryujinx \
+            > results/ryubing-info.txt 2>&1 || true
+          if [ "$b" -eq 0 ]; then
+            echo true > results/ryubing-installed
+          else
+            echo false > results/ryubing-installed
+          fi
+      - name: Measure Ryubing with exact same ARM64 NRO
+        run: |
+          set -euo pipefail
+          if [ "$(cat results/ryubing-installed)" != true ]; then
+            echo 'Ryubing not installable; NO emulator memory comparison claimed.' \
+              > results/ryubing-blocker.txt
+            exit 0
+          fi
+          mkdir -p ryu-profile
+          # No copyrighted game, firmware, or console keys are installed.
+          xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
+            python3 scripts/compare_emulator_memory.py \
+            --output results/ryubing --seconds 25 --limit-mb 2800 -- \
+            dbus-run-session -- flatpak run \
+            --filesystem="$PWD/input":ro --filesystem="$PWD/ryu-profile" \
+            io.github.ryubing.Ryujinx \
+            -r "$PWD/ryu-profile" "$PWD/input/castle_nx_bootstrap.nro" \
+            > results/ryubing-summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ryubing-memory-comparison
+          path: results/
+          retention-days: 7
