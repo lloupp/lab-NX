@@ -1,0 +1,39 @@
+name: Prepare native GoldenEye PC engine for private run
+on:
+  workflow_dispatch:
+  push:
+    branches: [test/goldeneye-native-pc-engine-proof-20261020]
+    paths:
+      - '.github/workflows/goldeneye-native-pc-reference.yml'
+permissions:
+  contents: read
+jobs:
+  trusted-engine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Retrieve official prebuilt native x86_64 GoldenEye game engine (no ROM)
+        run: |
+          set -eux
+          mkdir -p verified
+          BASE='https://github.com/jkdansereau/goldeneye-pc-port/releases/download/v0.5.0'
+          curl -fL --retry 3 --connect-timeout 25 --max-time 240 \
+            "$BASE/goldeneye-pc-port-0.5.0-linux-x86_64.tar.gz" \
+            -o verified/goldeneye-pc-port-0.5.0-linux-x86_64.tar.gz
+          curl -fL --retry 3 --connect-timeout 25 --max-time 60 \
+            "$BASE/goldeneye-pc-port-0.5.0-linux-x86_64.tar.gz.sha256" \
+            -o verified/expected.sha256
+          cd verified
+          cat expected.sha256
+          sha256sum goldeneye-pc-port-0.5.0-linux-x86_64.tar.gz
+          EXPECTED=$(awk '{print $1}' expected.sha256)
+          ACTUAL=$(sha256sum goldeneye-pc-port-0.5.0-linux-x86_64.tar.gz | awk '{print $1}')
+          test "$EXPECTED" = "$ACTUAL"
+          tar -tzf goldeneye-pc-port-0.5.0-linux-x86_64.tar.gz | head -50
+          printf 'Verified official release tarball SHA-256: %s\n' "$ACTUAL"
+          echo 'The downloadable file contains NO original ROM or game assets.'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-pc-engine-official-v0.5.0-linux-no-rom
+          path: verified/
+          if-no-files-found: error
