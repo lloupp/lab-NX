@@ -20,16 +20,20 @@ int main(int argc,char **argv) {
     FILE *f=fopen(GAME_XEX,"rb");
     if(f) {status=xex_probe_file(f,&info);fclose(f);}
     /* Privately decoded genuine Xbox PE, never embedded in public NRO. */
-    uint32_t ppc_result=0;
-    PpcPeStatus ppc_status=PPC_PE_IO;
+    uint32_t ppc_result=0,ppc_result2=0;
+    PpcPeStatus ppc_status=PPC_PE_IO,ppc_status2=PPC_PE_IO;
     FILE *guest=fopen("sdmc:/switch/labnx/castle/decoded-powerpc.bin","rb");
     if(guest) {
-        ppc_status=ppc_pe_run_leaf(guest,0x8208EE10u,17u,&ppc_result);
+        ppc_status=ppc_pe_run_leaf(guest,0x82053A88u,17u,&ppc_result);
+        ppc_status2=ppc_pe_run_leaf(guest,0x82053AA0u,29u,&ppc_result2);
         fclose(guest);
     }
+    const bool leaf_verified=(status==XEX_PROBE_OK &&
+        ppc_status==PPC_PE_OK && ppc_result==4u &&
+        ppc_status2==PPC_PE_OK && ppc_result2==5u);
     /* Success means only a restricted guest instruction stream terminated.
        It does NOT prove authentic function boundaries or gameplay. */
-    if(ppc_status==PPC_PE_OK) {
+    if(leaf_verified) {
         static const char marker[]="LABNX_GUEST_PPC_LEAF_EXECUTED";
         svcOutputDebugString(marker,sizeof(marker)-1);
     }
@@ -52,12 +56,16 @@ int main(int argc,char **argv) {
         else if(status==XEX_PROBE_FORMAT) printf("Invalid/truncated XEX2 file.\n");
         else printf("No XEX: copy your own file to SD card.\n");
         printf("\nPrivate PowerPC PE: %s\n",
-            ppc_status==PPC_PE_OK?"LEAF EXECUTED":"NOT EXECUTED");
+            leaf_verified?"LEAF EXECUTED / VERIFIED":"NOT VERIFIED");
         if(ppc_status==PPC_PE_OK)
-            printf("PPC snippet at 8208EE10: r3=%lu (seed=17)\n",
+            printf("PPC 82053A88: r3=%lu (expected 4)\n",
                    (unsigned long)ppc_result);
-        else
-            printf("PPC snippet status: %u\n",(unsigned)ppc_status);
+        if(ppc_status2==PPC_PE_OK)
+            printf("PPC 82053AA0: r3=%lu (expected 5)\n",
+                   (unsigned long)ppc_result2);
+        if(!leaf_verified)
+            printf("PPC status: %u / %u; XEX status: %u\n",
+                   (unsigned)ppc_status,(unsigned)ppc_status2,(unsigned)status);
         printf("No complete Xbox game runtime yet.\n");
         printf("\nController A: %s\n",(keys&HidNpadButton_A)?"PRESSED":"-");
         printf("Controller Plus: %s\n",(keys&HidNpadButton_Plus)?"PRESSED":"-");

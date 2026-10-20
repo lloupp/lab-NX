@@ -16,7 +16,8 @@ def fixture():
     s=opt+224+40
     struct.pack_into("<8sIIIIIIHHI",pe,s,
                      b".rdata\0\0",0x200,0x1000,0x200,0x600,0,0,0,0,0x40000040)
-    pe[0x600:0x604]=(0x190).to_bytes(4,"big")
+    pe[0x1000:0x1004]=(0x190).to_bytes(4,"big")
+    pe[0x600:0x604]=(0xFFFFFFFF).to_bytes(4,"big")  # poison raw PE offset
     xex=bytearray(0x700)
     xex[:4]=b"XEX2"
     xex[8:12]=(0x700).to_bytes(4,"big")

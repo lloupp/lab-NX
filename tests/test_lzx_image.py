@@ -9,7 +9,7 @@ from nxlab.pe_elf import wrap_text
 
 
 def synthetic_xbox_pe():
-    data=bytearray(4096)
+    data=bytearray(0x6000)
     data[:2]=b"MZ"
     struct.pack_into("<I",data,0x3C,0xF0)
     data[0xF0:0xF4]=b"PE\0\0"
@@ -22,7 +22,8 @@ def synthetic_xbox_pe():
     section=opt+224
     struct.pack_into("<8sIIIIIIHHI",data,section,
                      b".text\0\0\0",0x200,0x5000,0x200,0x400,0,0,0,0,0x60000020)
-    data[0x400:0x404]=b"\x38\x60\x00\x01"  # PPC li r3,1
+    data[0x5000:0x5004]=b"\x38\x60\x00\x01"  # PPC li r3,1
+    data[0x400:0x404]=b"\x48\x00\x00\x00"  # fake disk PE raw pointer to reject
     return bytes(data)
 
 
@@ -66,7 +67,7 @@ class LzxImageTests(unittest.TestCase):
     def test_invalid_code_section_rejected(self):
         with TemporaryDirectory() as t:
             raw=bytearray(synthetic_xbox_pe())
-            raw[0x400:0x404]=b"MZ\0\0"  # not enough to change PE structure
+            raw[0x5000:0x5004]=b"MZ\0\0"  # not enough to change PE structure
             opt=0xF0+24
             # Strip executable flag from .text.
             struct.pack_into("<I",raw,opt+224+36,0x40000040)

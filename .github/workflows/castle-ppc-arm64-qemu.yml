@@ -1,7 +1,7 @@
 name: Switch PPC interpreter on native-equivalent Linux ARM64 (QEMU)
 on:
   push:
-    branches: [feat/castle-arm64-private-ppc-proof]
+    branches: [feat/castle-arm64-private-ppc-proof, fix/castle-xex-mapped-pe-rva]
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -15,6 +15,11 @@ jobs:
       - name: Validate Castle private-SD path using synthetic fixtures
         run: |
           python3 -m unittest discover -s tests -p test_switch_sd.py -v
+          python3 -m unittest discover -s tests -p test_ppc_leaf.py -v
+          python3 -m unittest discover -s tests -p test_lzx_image.py -v
+          python3 -m unittest discover -s tests -p test_import_contracts.py -v
+          gcc -std=c11 -Wall -Wextra -Werror -I switch/castle_bootstrap/include             switch/castle_bootstrap/source/ppc_pe.c             switch/castle_bootstrap/tests/test_ppc_pe.c             -o /tmp/test_mapped_guest_ppc
+          /tmp/test_mapped_guest_ppc
       - name: Install AArch64 cross compiler and user-mode emulator
         run: |
           sudo apt-get update -qq
@@ -44,7 +49,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import struct
-          b=bytearray(4096)
+          b=bytearray(0x51000)
           b[:2]=b'MZ'
           struct.pack_into('<I',b,0x3c,0x80)
           b[0x80:0x84]=b'PE\0\0'
@@ -56,7 +61,8 @@ jobs:
           struct.pack_into('<8sIIIIIIHHI',b,sec,b'.text\0\0\0',
                            0x200,0x50000,0x200,0x400,0,0,0,0,0x60000020)
           # Synthetic: addi r3,r3,104 ; blr
-          b[0x400:0x408]=bytes.fromhex('386300684e800020')
+          b[0x400:0x404]=bytes.fromhex('48000000')  # poison PE disk offset
+          b[0x50000:0x50008]=bytes.fromhex('386300684e800020')
           Path('arm64-out/synthetic-pe.bin').write_bytes(b)
           PY
           arm64-out/ppc_leaf_probe.x86_64 arm64-out/synthetic-pe.bin 0x82050000 17 121 | tee arm64-out/host-result.json

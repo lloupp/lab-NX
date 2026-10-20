@@ -29,11 +29,13 @@ PpcPeStatus ppc_pe_run_leaf(FILE *pe,uint32_t address,uint32_t seed,uint32_t *re
     if(section_table+40u*num>limit)return PPC_PE_FORMAT;
     for(unsigned i=0;i<num;i++){
         if(!read_at(pe,limit,(uint32_t)section_table+40u*i,sec,sizeof(sec)))return PPC_PE_IO;
-        uint32_t rva=le32(sec+12),sz=le32(sec+16),off=le32(sec+20),flags=le32(sec+36);
-        if((uint64_t)off+sz>limit)return PPC_PE_FORMAT;
+        uint32_t rva=le32(sec+12),sz=le32(sec+16),flags=le32(sec+36);
+        /* XEX normal-LZX output is a mapped PE image: section bytes live at
+           virtual RVA, NOT section PointerToRawData from the disk PE header. */
+        if((uint64_t)rva+sz>limit)return PPC_PE_FORMAT;
         uint64_t start=(uint64_t)base+rva;
         if((flags&0x20000000u)&&address>=start&&(uint64_t)address+4<=start+sz){
-            raw=off+(uint32_t)((uint64_t)address-start);
+            raw=(uint32_t)((uint64_t)address-base);
             remaining=(uint32_t)(start+sz-address);
             break;
         }

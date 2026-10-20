@@ -95,7 +95,7 @@ cat > "$REPORT/verdict.txt" <<EOF
 Eden OpenGL private test completed (diagnostic only).
 Guest ARM64 main via SVC log: $MAIN
 Original PPC leaf via SVC log: $PPC
-Review run/screen-*.png for 'LEAF EXECUTED' with r3=121.
+Review run/screen-*.png for 'LEAF EXECUTED' with r3=4.
 If SVC log is absent, a screenshot of that exact message is required.
 Full Xbox runtime, original game frame and gameplay: NOT VERIFIED.
 Copyrighted source bytes remain on this local machine, outside Git.

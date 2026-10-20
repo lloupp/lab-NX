@@ -1,3 +1,5 @@
+**CORREÇÃO M4.4 (20/10/2026):** Os endereços originais atribuídos aos 15 testes abaixo estavam ERRADOS: a imagem XEX decodificada é mapeada por RVA, mas o protótipo anterior usou PointerToRawData. Os resultados abaixo são **históricos, invalidados para aqueles endereços**. Veja docs/CASTLE_MAPPED_XEX_RVA_M4_4.md para três funções originais confirmadas em ARM64.
+
 # M2.8 — Native execution of small, real PowerPC code snippets
 
 ## Proven locally against user's original Castle Crashers PowerPC PE

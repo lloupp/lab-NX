@@ -1,3 +1,5 @@
+**CORREÇÃO M4.4 (20/10/2026):** A prova privada agora deve indicar 0x82053A88 => r3=4 e 0x82053AA0 => r3=5, usando endereços RVA reais do XEX, não o antigo r3=4 em 0x82053A88. Veja docs/CASTLE_MAPPED_XEX_RVA_M4_4.md.
+
 # M4.2 — Eden/Ryubing memory diagnostics and a PRIVATE Castle PPC-on-Eden runner
 
 **Evidence captured:** 2026-10-19/20, Ubuntu 24.04 GitHub Actions, devkitPro
@@ -95,7 +97,7 @@ The runner:
 
 **Next evidence gate:** a screenshot of
 `Private PowerPC PE: LEAF EXECUTED` and
-`PPC snippet at 8208EE10: r3=121 (seed=17)`, optionally accompanied
+`PPC snippet at 82053A88: r3=4 (seed=17)`, optionally accompanied
 by `LABNX_GUEST_PPC_LEAF_EXECUTED` emitted from the guest through
 `svcOutputDebugString`. Without this, original Castle guest instructions
 have **not** been confirmed in Eden. The 15 earlier original PPC host
