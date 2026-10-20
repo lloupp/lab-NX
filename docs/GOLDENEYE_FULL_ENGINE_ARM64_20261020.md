@@ -1,10 +1,20 @@
 # Complete engine ARM64 experiment — 2026-10-20
 
+## Latest session result (supersedes the early stall interpretation)
+
+The complete ARM64 engine and Dam loader execute in an actual Switch NRO in official Eden. A longer local diagnostic run processed/swapped more than 600 real engine frames, but the captured presentation remained black. This is **not verified visible gameplay or mission completion**.
+
+The unmodified devkitPro OpenGL triangle visibly rendered at 60 FPS despite the same Maxwell `Invalid insn` messages. Those messages alone therefore do not identify the GoldenEye blocker. SDL/EGL drawable/context/presentation behavior remains under investigation. An experimental EGL-size fallback did not establish visible gameplay and is not included in the published validated patch.
+
+The portal scanner fix, real kernel register sampling and actual-scanner ASan/UBSan regression are published in `47cdb72`. The full-engine cross-build plus portal regression passed remotely: https://github.com/lloupp/lab-NX/actions/runs/39456713980 . The separate deko3d diagnostic's three jobs also passed: https://github.com/lloupp/lab-NX/actions/runs/39456713888 . Neither workflow proves full-game gameplay.
+
+During a diagnostic source build of Eden with the macro-cache fix, the Work execution environment stopped accepting new processes and file access, preventing further runtime checks. No successfully executed patched-Eden build is claimed. The full deko3d engine backend and physical Switch validation remain incomplete.
+
 ## What is real
 
 The complete pinned reconstructed game (upstream `fda76b69837e6c5aae436e0d3e798989e49b06d2`) cross-compiles and links as an AArch64 Switch NRO. Its original CMake source lists include the game, scheduler, audio, reconstructed engine, Fast3D interpreter and renderer. The executable was launched in official Eden 0.2.1 with a privately supplied NTSC-U ROM and locally converted sidecars. Logs confirm entry through the real `mainproc`, cart mapping, 512 model sidecars, 86 background/collision/setup sidecars, shared RDRAM views, audio/controller initialization and game threads. The portal-bound fix subsequently allows `lvlStageLoad()` to finish for Dam, including player/object setup and the final level-control checkpoint.
 
-**First-mission gameplay has not been demonstrated. The heartbeat still reports zero rendered frames. No physical Switch was available in this environment.**
+**First-mission gameplay has not been demonstrated. Early short captures reported zero rendered frames; the later longer run above advanced beyond 600 while presentation stayed black. No physical Switch was available in this environment.**
 
 This experiment uses **Fast3D / Switch Mesa / nouveau (OpenGL)**. It does not claim that the complete engine uses deko3d. The earlier deko3d triangle and restricted SHADE RGB API adapter remain separate and preserved. Textures, combiners, depth, fog and alpha in a full deko3d backend still need implementation and validation.
 
@@ -47,7 +57,7 @@ The N64 Makefile, linker script and RSP sources are untouched. The upstream patc
 - Engine startup and stall evidence is recorded separately from the memory diagnostic. No rendered gameplay, mission completion or performance claim follows from those results.
 - The complete-engine CI build passed: https://github.com/lloupp/lab-NX/actions/runs/39454406279 (commit `9f0d976`). The new CI workflow is a build-only check. The previously approved deko3d diagnostic workflow does not validate the complete-engine path.
 
-Next acceptance gate: resolve the Mesa/nouveau GPU shader rejection in official Eden, reach a submitted real game display list and verify a visible Dam frame plus controller-driven movement. Then implement/validate the complete deko3d rendering path and repeat on physical Switch hardware.
+Next acceptance gate: resolve black presentation in the complete engine, reach a submitted real game display list and verify a visible Dam frame plus controller-driven movement. Then implement/validate the complete deko3d rendering path and repeat on physical Switch hardware.
 
 Earlier pre-portal-fix NRO SHA256: `6120987c40c461c90319ac0a4cceba258ccc6143d5d6965b769100af7f85f8a6` (8,237,112 bytes; compiled from the published engine patch). The matching fresh-profile trace reaches the first font ROM copy and then records zero-frame heartbeats. The screenshot shows a stalled renderer, not gameplay.
 
@@ -57,6 +67,6 @@ The last file-log line was an incomplete indicator: kernel register sampling fou
 
 `tests/native/test_goldeneye_portal_bounds.py` extracts and compiles the actual scanner and table from the pinned source plus this patch. ASan/UBSan tests exercise 3 level cases, including both authored range sets. The original adjacency boundary reproduces a global buffer overflow with separated host symbols; the corrected boundary passes. No ROM is involved in this regression.
 
-After the fix, the full Dam level loader reaches its final video/control initialization checkpoints. Official Eden 0.2.1 then emits Maxwell shader decoder assertions (`Invalid insn`, including zero words) on the Mesa/nouveau path. Rendered-frame count remains zero. This is a GPU rendering blocker after mission loading, not a playable mission. The original font-loading interpretation is superseded by these register and sanitizer results.
+After the fix, the full Dam level loader reaches its final video/control initialization checkpoints. Official Eden 0.2.1 then emits Maxwell shader decoder assertions (`Invalid insn`, including zero words) on the Mesa/nouveau path. Rendered-frame count remains zero. These messages also occur in a working SDK triangle, so they do not establish the root cause. Black presentation after mission loading remains unresolved. The original font-loading interpretation is superseded by these register and sanitizer results.
 
 Current portal-fixed NRO SHA256: `fdd17cb00557502b40e36349c5f15686d50375e8369d1d9336277e4b798c7633` (8,237,112 bytes). See `portal-fixed-build-manifest.json` and the matching `engine-portal-fixed.txt` / `eden-mesa-shader-errors.txt`.
