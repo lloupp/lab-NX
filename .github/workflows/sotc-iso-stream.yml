@@ -53,3 +53,32 @@ jobs:
           name: sotc-iso-stream-arm64-object
           path: sotc_iso_arm64.o
           if-no-files-found: error
+
+  upstream-recompiler-host:
+    name: Build Celosia's actual PS2Recomp translator (no game files)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Retrieve pinned Celosia GPL-3.0 source
+        run: |
+          git init -q celosia
+          git -C celosia remote add origin https://github.com/HenryKun55/celosia.git
+          git -C celosia fetch --depth=1 origin 0d5c35dde50390ccf9a35aa7ae146cfe3ee92168
+          git -C celosia checkout --detach -q FETCH_HEAD
+          test "$(git -C celosia rev-parse HEAD)" = 0d5c35dde50390ccf9a35aa7ae146cfe3ee92168
+      - name: Compile the real upstream MIPS to C++ static recompiler
+        run: |
+          cmake -S celosia/PS2Recomp -B /tmp/ps2recomp-host -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPS2X_BUILD_RUNTIME=OFF \
+            -DPS2X_BUILD_ANALYZER=OFF \
+            -DPS2X_BUILD_TEST=OFF \
+            -DPS2X_BUILD_STUDIO=OFF
+          cmake --build /tmp/ps2recomp-host --target ps2_recomp --parallel 2
+          test -s /tmp/ps2recomp-host/ps2xRecomp/ps2_recomp
+      - name: Upload genuine compiler executable (game-free)
+        uses: actions/upload-artifact@v4
+        with:
+          name: celosia-ps2recomp-linux-x64
+          path: /tmp/ps2recomp-host/ps2xRecomp/ps2_recomp
+          if-no-files-found: error
