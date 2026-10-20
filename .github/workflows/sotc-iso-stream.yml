@@ -84,3 +84,14 @@ jobs:
           name: celosia-ps2recomp-linux-x64
           path: /tmp/ps2recomp-host/ps2xRecomp/ps2_recomp
           if-no-files-found: error
+
+      - name: Export pinned upstream source-only boot mapping helpers
+        uses: actions/upload-artifact@v4
+        with:
+          name: celosia-boot-mapping-sources
+          path: |
+            celosia/tools/elfmini.py
+            celosia/tools/funcmap_elf.py
+            celosia/tools/xff.py
+            celosia/game/scus.toml
+          if-no-files-found: error
