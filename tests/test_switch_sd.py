@@ -1,6 +1,8 @@
 """Only synthetic XEX bytes; never push commercial game files."""
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+import hashlib
 from tempfile import TemporaryDirectory
 from nxlab.switch_sd import prepare
 from test_m2 import fixture, put32
@@ -32,6 +34,45 @@ class SwitchSdTests(unittest.TestCase):
             sd.mkdir()
             with self.assertRaises(ValueError):
                 prepare(src,sd,decoded_pe=fake_pe)
+            self.assertFalse((sd/"switch/labnx/castle/default.xex").exists())
+            self.assertFalse((sd/"switch/labnx/castle/decoded-powerpc.bin").exists())
+
+
+    def test_private_stage1_guest_pe_exact_path_and_hash_gate(self):
+        # Fully synthetic PE contents; override expected constants ONLY in test.
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            xex=root/"synthetic.xex"
+            xex.write_bytes(fixture())
+            pe=root/"synthetic-ppc.pe"
+            image=b"MZ"+bytes(4094)
+            pe.write_bytes(image)
+            sd=root/"sdmc"
+            sd.mkdir()
+            with (patch("nxlab.switch_sd.CASTLE_PPC_PE_BYTES",len(image)),
+                  patch("nxlab.switch_sd.CASTLE_PPC_PE_SHA256",
+                        hashlib.sha256(image).hexdigest())):
+                result=prepare(xex,sd,decoded_pe=pe)
+                self.assertTrue(result["guest_pe_verified"])
+                self.assertEqual((sd/"switch/labnx/castle/decoded-powerpc.bin").read_bytes(),
+                                 image)
+                self.assertEqual((sd/"switch/labnx/castle/default.xex").read_bytes(),
+                                 fixture())
+                with self.assertRaises(FileExistsError):
+                    prepare(xex,sd,decoded_pe=pe)
+
+    def test_private_stage1_pe_mismatch_rejected_before_any_copy(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            xex=root/"synthetic.xex"
+            xex.write_bytes(fixture())
+            pe=root/"synthetic-wrong.pe"
+            pe.write_bytes(b"MZ"+bytes(4094))
+            sd=root/"sdmc"
+            sd.mkdir()
+            with patch("nxlab.switch_sd.CASTLE_PPC_PE_BYTES",4096):
+                with self.assertRaises(ValueError):
+                    prepare(xex,sd,decoded_pe=pe)
             self.assertFalse((sd/"switch/labnx/castle/default.xex").exists())
             self.assertFalse((sd/"switch/labnx/castle/decoded-powerpc.bin").exists())
 
