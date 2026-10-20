@@ -49,7 +49,19 @@ def screenshot(path):
         return False
 
 
-def measure(command, dest, seconds=25.0, limit_mb=2800, every=0.5):
+def dismiss_initial_dialog():
+    """Choose NO for Eden's optional request to install unknown decryption keys."""
+    try:
+        result = subprocess.run(["xdotool", "key", "--clearmodifiers", "Right", "Return"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                timeout=3, check=False)
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def measure(command, dest, seconds=25.0, limit_mb=2800, every=0.5,
+            dismiss_eden_keys=False):
     if not command or not 2 <= seconds <= 120 or not 128 <= limit_mb <= 10000:
         raise ValueError("Invalid command, duration or memory ceiling")
     dest = Path(dest)
@@ -57,6 +69,8 @@ def measure(command, dest, seconds=25.0, limit_mb=2800, every=0.5):
     samples = []
     shots = []
     reason = "unknown"
+    dismissals = []
+    prompts_at = [3.0, 7.0] if dismiss_eden_keys else []
     return_code = None
     with (dest / "emulator.log").open("wb") as output:
         proc = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
@@ -75,6 +89,10 @@ def measure(command, dest, seconds=25.0, limit_mb=2800, every=0.5):
                                 "rss_mib": round(rss_kib / 1024, 2),
                                 "virtual_mib": round(virtual_kib / 1024, 2),
                                 "processes": len(pids)})
+                if prompts_at and elapsed >= prompts_at[0]:
+                    when = prompts_at.pop(0)
+                    dismissals.append({"at_s": when,
+                                      "sent_no_response": dismiss_initial_dialog()})
                 if checkpoints and elapsed >= checkpoints[0]:
                     t = checkpoints.pop(0)
                     image = dest / f"screen-{int(t)}s.png"
@@ -108,6 +126,7 @@ def measure(command, dest, seconds=25.0, limit_mb=2800, every=0.5):
         "schema": 1, "termination": reason, "process_exit_code": return_code,
         "peak_rss_mib": max((s["rss_mib"] for s in samples), default=0),
         "samples": samples, "screenshots": shots,
+        "optional_dialog_responses": dismissals,
         "guest_execution_verified": False, "castle_rendering_verified": False,
         "rss_limit_is_not_switch_guest_ram": True,
         "note": "VmRSS summed across subprocesses can double-count shared pages; virtual memory reservations are not RAM."
@@ -121,12 +140,14 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--seconds", type=float, default=25)
     p.add_argument("--limit-mb", type=int, default=2800)
+    p.add_argument("--dismiss-eden-keys", action="store_true")
     p.add_argument("command", nargs=argparse.REMAINDER)
     opts = p.parse_args()
     command = opts.command[1:] if opts.command and opts.command[0] == "--" else opts.command
     if not command:
         p.error("Missing command after --")
-    print(json.dumps(measure(command, opts.output, opts.seconds, opts.limit_mb), indent=2))
+    print(json.dumps(measure(command, opts.output, opts.seconds, opts.limit_mb,
+                             dismiss_eden_keys=opts.dismiss_eden_keys), indent=2))
 
 
 if __name__ == "__main__":
