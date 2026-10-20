@@ -12,6 +12,9 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Castle private-SD path using synthetic fixtures
+        run: |
+          python3 -m unittest discover -s tests -p test_switch_sd.py -v
       - name: Install AArch64 cross compiler and user-mode emulator
         run: |
           sudo apt-get update -qq
@@ -69,7 +72,7 @@ jobs:
             echo "Unexpected acceptance of terminal return without full expected sequence" >&2
             exit 1
           fi
-          sha256sum arm64-out/ppc_leaf_probe.aarch64 \
+          (cd arm64-out && sha256sum ppc_leaf_probe.aarch64) \
             > arm64-out/aarch64-binary-sha256.txt
       - name: Stage redistributable QEMU executable for PRIVATE real PE test
         run: |
@@ -81,7 +84,7 @@ jobs:
           echo "Run: ./qemu-aarch64-static ./ppc_leaf_probe.aarch64 /PRIVATE/decoded-powerpc.bin 0x8208EE10 17 121" \
             >> arm64-out/README-private-use.txt
           rm -f arm64-out/synthetic-pe.bin
-          sha256sum arm64-out/qemu-aarch64-static \
+          (cd arm64-out && sha256sum qemu-aarch64-static) \
             >> arm64-out/aarch64-binary-sha256.txt
       - uses: actions/upload-artifact@v4
         with:
