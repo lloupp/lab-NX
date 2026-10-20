@@ -8,7 +8,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 TARGET := goldeneye-deko-smoke
 BUILD := build
-SOURCES := source
+SOURCES := source ../native
 ROMFS := romfs
 APP_TITLE := GoldenEye NX deko3d (diagnostic)
 APP_AUTHOR := lab-NX
@@ -29,8 +29,8 @@ export TOPDIR := $(CURDIR)
 export VPATH := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
 export LD := $(CC)
-export OFILES := main.o
-export INCLUDE := $(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
+export OFILES := main.o goldeneye_fast3d_bridge.o
+export INCLUDE := -I$(CURDIR)/../native $(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export NROFLAGS := --nacp=$(CURDIR)/$(TARGET).nacp --romfsdir=$(CURDIR)/$(ROMFS)
 export ROMFS_DEPS := $(addprefix $(CURDIR)/,$(SHADER_OUTPUTS))
