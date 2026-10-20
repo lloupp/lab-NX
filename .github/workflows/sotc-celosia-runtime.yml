@@ -1,0 +1,43 @@
+name: SOTC Celosia host runtime bridge
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/sotc-ps2-iso-stage0]
+    paths:
+      - '.github/workflows/sotc-celosia-runtime.yml'
+permissions:
+  contents: read
+jobs:
+  celosia-host-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host OpenGL and build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y cmake ninja-build build-essential pkg-config             libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev             libxinerama-dev libasound2-dev libwayland-dev libxkbcommon-dev
+      - name: Checkout pinned upstream Celosia without game files
+        run: |
+          git init -q celosia
+          git -C celosia remote add origin https://github.com/HenryKun55/celosia.git
+          git -C celosia fetch --depth=1 origin 0d5c35dde50390ccf9a35aa7ae146cfe3ee92168
+          git -C celosia checkout --detach -q FETCH_HEAD
+          test "$(git -C celosia rev-parse HEAD)" = 0d5c35dde50390ccf9a35aa7ae146cfe3ee92168
+      - name: Configure real native Celosia host runtime
+        run: |
+          cmake -S celosia/PS2Recomp -B celosia-host-build -G Ninja             -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-msse4.1             -DPS2X_BUILD_RECOMP=OFF             -DPS2X_BUILD_ANALYZER=OFF             -DPS2X_BUILD_TEST=OFF             -DPS2X_BUILD_STUDIO=OFF             -DPS2X_ENABLE_DEBUG_UI=OFF             -DPS2X_ENABLE_FFMPEG=OFF             -DPS2X_ENABLE_RUNNER_PCH=OFF             -DPS2X_ENABLE_RUNNER_UNITY_BUILD=OFF
+      - name: Build original native runtime libraries (no guest data)
+        run: |
+          cmake --build celosia-host-build --target ps2_runtime ps2_iop -j2
+          test -s celosia-host-build/ps2xRuntime/libps2_runtime.a
+          test -s celosia-host-build/ps2xIOP/libps2_iop.a
+      - name: Pack upstream source and cached CMake dependencies for private build
+        run: |
+          tar -czf celosia_host_sdk_bundle.tar.gz             --exclude=.git --exclude='*.o' --exclude='*.o.d'             --exclude='CMakeFiles' --exclude='CMakeCache.txt'             celosia celosia-host-build
+          ls -lh celosia_host_sdk_bundle.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: celosia-host-sdk-source-and-libs
+          path: celosia_host_sdk_bundle.tar.gz
+          if-no-files-found: error
