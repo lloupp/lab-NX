@@ -76,7 +76,7 @@ jobs:
             xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
             python3 scripts/compare_emulator_memory.py \
             --output results/eden --seconds 25 --limit-mb 2800 --dismiss-eden-keys -- \
-            "$PWD/squashfs-root/AppRun" --null-render \
+            "$PWD/squashfs-root/AppRun" eden-cli \
             --game "$PWD/input/castle_nx_bootstrap.nro" \
             > results/eden-summary.json
           grep -R 'LABNX_GUEST_PPC_LEAF_EXECUTED' results/eden/ || true
@@ -140,7 +140,12 @@ jobs:
           # Avoid spurious low vm.max_map_count modal where permitted.
           sudo sysctl -w vm.max_map_count=1048576 > results/max-map-count.txt 2>&1 || true
           cat /proc/sys/vm/max_map_count >> results/max-map-count.txt
-          mkdir -p ryu-profile
+          mkdir -p ryu-profile/system
+          # Only an EMPTY file to test unencrypted homebrew startup: NOT keys.
+          # No encrypted Nintendo content can be decrypted with it.
+          : > ryu-profile/system/prod.keys
+          chmod 600 ryu-profile/system/prod.keys
+          echo 'Empty 0-byte placeholder; no real console keys or firmware'             > results/homebrew-only.txt
           # No copyrighted game, firmware, or console keys are installed.
           xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
             python3 scripts/compare_emulator_memory.py \
