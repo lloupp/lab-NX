@@ -218,8 +218,13 @@ static bool ge_graphics_init(void)
 
     DkQueueMaker queue_maker;
     dkQueueMakerDefaults(&queue_maker, g_gpu.device);
-    queue_maker.flags = DkQueueFlags_Graphics;
-    ge_trace("queue-create-start");
+    /* Minimize memory pressure in software-Vulkan emulators. The diagnostic
+     * uses neither compute nor depth nor shader scratch allocations. Keep
+     * this queue configuration separate from the real game renderer. */
+    queue_maker.flags = DkQueueFlags_Graphics | DkQueueFlags_DisableZcull;
+    queue_maker.commandMemorySize = DK_QUEUE_MIN_CMDMEM_SIZE;
+    queue_maker.perWarpScratchMemorySize = 0;
+    ge_trace("queue-create-lean-start");
     g_gpu.queue = dkQueueCreate(&queue_maker);
     ge_trace("queue-create-returned");
     if (!g_gpu.queue) { ge_trace("queue-create-failed"); return false; }
