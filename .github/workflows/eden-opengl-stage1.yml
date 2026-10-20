@@ -1,7 +1,7 @@
 name: Eden 0.2.1 OpenGL guest ARM64 proof (no game or keys)
 on:
   push:
-    branches: [feat/castle-eden-memory-analysis]
+    branches: [feat/castle-eden-memory-analysis, fix/castle-xex-mapped-pe-rva]
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        renderer: ['0', '1', '2']
+        renderer: ['0']  # OpenGL validated, no private game in CI
     env:
       RENDERER_BACKEND: ${{ matrix.renderer }}
     steps:
