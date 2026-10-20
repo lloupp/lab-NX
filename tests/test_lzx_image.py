@@ -23,7 +23,8 @@ def synthetic_xbox_pe():
     struct.pack_into("<8sIIIIIIHHI",data,section,
                      b".text\0\0\0",0x200,0x5000,0x200,0x400,0,0,0,0,0x60000020)
     data[0x5000:0x5004]=b"\x38\x60\x00\x01"  # PPC li r3,1
-    data[0x400:0x404]=b"\x48\x00\x00\x00"  # fake disk PE raw pointer to reject\n    return bytes(data)
+    data[0x400:0x404]=b"\x48\x00\x00\x00"  # fake disk PE raw pointer to reject
+    return bytes(data)
 
 
 class LzxImageTests(unittest.TestCase):
