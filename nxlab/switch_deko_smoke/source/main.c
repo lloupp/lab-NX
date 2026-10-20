@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include "goldeneye_fast3d_bridge.h"
 #include <sys/stat.h>
 
 #define GE_FB_WIDTH 1280
@@ -43,21 +44,17 @@ typedef struct {
 
 static GeDeko g_gpu;
 
-/* Host-to-GPU vertex staging: the primitive is a synthetic test ONLY. The
- * layout (3x position + 3x color) matches the two precompiled DKSH inputs.
- * This provides a concrete vertex-buffer path for a future Fast3D bridge.
+/* The synthetic triangle below is written in gfx_pc.cpp's real
+ * untextured RGB profile: vec4 clip position followed by vec3 combiner RGB.
+ * The bridge validates and converts it into deko3d's CPU-writable VBO.
+ * The real game engine has not yet been linked and produces no geometry here.
  */
-typedef struct {
-    float pos[3];
-    float rgb[3];
-} GeDekoVertex;
-
-static const GeDekoVertex g_triangle[3] = {
-    { {  0.0f,  0.8f, 0.0f }, { 1.0f, 0.0f, 0.0f } },
-    { { -0.8f, -0.8f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
-    { {  0.8f, -0.8f, 0.0f }, { 0.0f, 0.0f, 1.0f } }
+typedef ge_fast3d_vertex GeDekoVertex;
+static const float g_triangle_fast3d[21] = {
+     0.0f,  0.8f, 0.f, 1.f, 1.f, 0.f, 0.f,
+    -0.8f, -0.8f, 0.f, 1.f, 0.f, 1.f, 0.f,
+     0.8f, -0.8f, 0.f, 1.f, 0.f, 0.f, 1.f
 };
-
 
 static void ge_trace(const char *message)
 {
@@ -198,8 +195,16 @@ static bool ge_graphics_init(void)
     if (!g_gpu.vertex_mem) { ge_trace("vertex-memory-failed"); return false; }
     void *vertex_cpu = dkMemBlockGetCpuAddr(g_gpu.vertex_mem);
     if (!vertex_cpu) { ge_trace("vertex-address-failed"); return false; }
-    memcpy(vertex_cpu, g_triangle, sizeof(g_triangle));
-    ge_trace("cpu-vertex-buffer-uploaded");
+    const ge_fast3d_profile profile = { 1, 0, 0, 0, 0 };
+    size_t vertices_written = 0;
+    const ge_fast3d_result bridge_result = ge_fast3d_unpack_rgb(
+        g_triangle_fast3d, sizeof(g_triangle_fast3d)/sizeof(float), 1,
+        &profile, vertex_cpu, 3, &vertices_written);
+    if (bridge_result != GE_F3D_OK || vertices_written != 3) {
+        ge_trace("fast3d-bridge-failed");
+        return false;
+    }
+    ge_trace("fast3d-untextured-rgb-vbo-ready");
 
     dkMemBlockMakerDefaults(&memory_maker, g_gpu.device, GE_CMD_BYTES);
     memory_maker.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached;
@@ -247,14 +252,14 @@ static bool ge_graphics_init(void)
     dkCmdBufBindColorState(g_gpu.command_buffer, &color);
     dkCmdBufBindColorWriteState(g_gpu.command_buffer, &write);
     DkVtxAttribState attributes[2] = {
-        { 0, 0, offsetof(GeDekoVertex, pos), DkVtxAttribSize_3x32, DkVtxAttribType_Float, 0 },
+        { 0, 0, offsetof(GeDekoVertex, position), DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0 },
         { 0, 0, offsetof(GeDekoVertex, rgb), DkVtxAttribSize_3x32, DkVtxAttribType_Float, 0 }
     };
     DkVtxBufferState buffer_states[1] = {
         { sizeof(GeDekoVertex), 0 }
     };
     DkBufExtents vertex_buffer = {
-        dkMemBlockGetGpuAddr(g_gpu.vertex_mem), sizeof(g_triangle)
+        dkMemBlockGetGpuAddr(g_gpu.vertex_mem), 3u * sizeof(GeDekoVertex)
     };
     dkCmdBufBindVtxAttribState(g_gpu.command_buffer, attributes, 2);
     dkCmdBufBindVtxBufferState(g_gpu.command_buffer, buffer_states, 1);
