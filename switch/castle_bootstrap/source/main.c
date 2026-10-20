@@ -24,7 +24,7 @@ int main(int argc,char **argv) {
     PpcPeStatus ppc_status=PPC_PE_IO;
     FILE *guest=fopen("sdmc:/switch/labnx/castle/decoded-powerpc.bin","rb");
     if(guest) {
-        ppc_status=ppc_pe_run_leaf(guest,0x8208EE10u,17u,&ppc_result);
+        ppc_status=ppc_pe_run_leaf(guest,0x82053A88u,17u,&ppc_result);
         fclose(guest);
     }
     /* Success means only a restricted guest instruction stream terminated.
@@ -54,7 +54,7 @@ int main(int argc,char **argv) {
         printf("\nPrivate PowerPC PE: %s\n",
             ppc_status==PPC_PE_OK?"LEAF EXECUTED":"NOT EXECUTED");
         if(ppc_status==PPC_PE_OK)
-            printf("PPC snippet at 8208EE10: r3=%lu (seed=17)\n",
+            printf("PPC snippet at 82053A88: r3=%lu (seed=17)\n",
                    (unsigned long)ppc_result);
         else
             printf("PPC snippet status: %u\n",(unsigned)ppc_status);
