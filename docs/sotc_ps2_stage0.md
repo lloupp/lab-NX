@@ -12,6 +12,7 @@ Local inventory validated on 2026-10-19 after reconstructing the user-provided s
 | SYSTEM.CNF | `BOOT2 = cdrom0:\\SCUS_974.72;1` |
 | Boot ELF | 32-bit little-endian MIPS, entry `0x00100010` |
 | Boot ELF size | 242,940 bytes |
+| Boot ELF SHA-1 | `b715b3496aad6f7601a0ab8495acd1d151a1ff7b` — exact match for [TheRealestNwah/sotc-decomp config](https://github.com/TheRealestNwah/sotc-decomp/blob/main/config/baserom.json) |
 | Boot ELF SHA-256 | `d16ad76ba8cdf87695d94b1316d51c1f248959ec0749814c31bb7a2d55d9a2e1` |
 | KERNEL.XFF | 415,908 bytes |
 | MANAGER.XFF | 1,650,876 bytes |
