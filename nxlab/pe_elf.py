@@ -1,6 +1,6 @@
 """Create a PRIVATE ELF32/PowerPC analysis wrapper for an Xbox PE .text section.
 
-This is for disassembly and investigation only. It is not a playable port
+The input must be a decoded XEX in-memory PE (RVA layout), not a\nconventional raw PE on disk. This is for disassembly and investigation only. It is not a playable port
 or a full PE loader and never embeds a game binary into the public repo.
 """
 from __future__ import annotations
@@ -40,11 +40,11 @@ def wrap_text(pe_path, elf_path):
         if name.rstrip(b"\0")==b".text" and flags & 0x20000000:
             if section is not None:
                 raise LzxPreflightError("Ambiguous executable .text sections")
-            if not raw_sz or raw_off+raw_sz>len(data):
+            if not raw_sz or rva+raw_sz>len(data):
                 raise LzxPreflightError("Invalid .text file range")
             if not rva<=entry_rva<rva+max(virt_sz,raw_sz):
                 raise LzxPreflightError("Game entry point outside .text")
-            section=(base+rva,data[raw_off:raw_off+raw_sz])
+            section=(base+rva,data[rva:rva+raw_sz])
     if section is None:
         raise LzxPreflightError("Executable .text section missing")
     addr,raw=section
