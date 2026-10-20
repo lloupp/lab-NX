@@ -2,7 +2,7 @@
 
 ## What is real
 
-The complete pinned reconstructed game (upstream `fda76b69837e6c5aae436e0d3e798989e49b06d2`) cross-compiles and links as an AArch64 Switch NRO. Its original CMake source lists include the game, scheduler, audio, reconstructed engine, Fast3D interpreter and renderer. The executable was launched in official Eden 0.2.1 with a privately supplied NTSC-U ROM and locally converted sidecars. Logs confirm entry through the real `mainproc`, cart mapping, 512 model sidecars, 86 background/collision/setup sidecars, shared RDRAM views, audio/controller initialization and game threads.
+The complete pinned reconstructed game (upstream `fda76b69837e6c5aae436e0d3e798989e49b06d2`) cross-compiles and links as an AArch64 Switch NRO. Its original CMake source lists include the game, scheduler, audio, reconstructed engine, Fast3D interpreter and renderer. The executable was launched in official Eden 0.2.1 with a privately supplied NTSC-U ROM and locally converted sidecars. Logs confirm entry through the real `mainproc`, cart mapping, 512 model sidecars, 86 background/collision/setup sidecars, shared RDRAM views, audio/controller initialization and game threads. The portal-bound fix subsequently allows `lvlStageLoad()` to finish for Dam, including player/object setup and the final level-control checkpoint.
 
 **First-mission gameplay has not been demonstrated. The heartbeat still reports zero rendered frames. No physical Switch was available in this environment.**
 
@@ -34,7 +34,7 @@ The experimental entry selects `-level_33` (Dam). It mounts SD and works under `
 - Game callbacks need low stacks because the reconstructed code deliberately casts some stack pointers to `u32`. libnx pthread creation cannot directly use the mapped static alias as its startup stack (`ENOMEM`). A small AAPCS64 trampoline retains pthread's normal TLS/startup/cleanup stack while running the callback on an 8 MiB low alias. The callback returns to the original stack before pthread cleanup. Cancellation or exception unwinding across this trampoline is unsupported; the port uses cooperative thread termination. Static capacity is 16 callbacks per launch; slots are not recycled.
 - Existing x86-64-specific prototype, image-table, model-hit-pool, music-memory, audio and display-list pointer fixes are also enabled for ARM64 port builds. These are ABI/layout adaptations, not mission-logic changes.
 - Scope the game's `strtol` symbol to `geN64Strtol` in C translation units, avoiding a duplicate definition when newlib's internal parsing code also pulls its CRT implementation.
-- Host-header routing is adapted for newlib. Subprocess conversion/restart and network update checks are disabled for the Switch build; missing conversion remains a reported failure. Thread-dump support is explicitly unavailable rather than returning fabricated backtraces.
+- Host-header routing is adapted for newlib. Subprocess conversion/restart and network update checks are disabled for the Switch build; missing conversion remains a reported failure. A watchdog can sample actual callback registers with `svcSetThreadActivity` / `svcGetThreadContext3` / immediate resume. It reports every SVC result and raw PC/LR/SP/FP, not a fabricated stack trace.
 
 The N64 Makefile, linker script and RSP sources are untouched. The upstream patch is applied only to a disposable source copy. Initial boot checkpoints are conditional Switch diagnostics.
 
@@ -45,6 +45,18 @@ The N64 Makefile, linker script and RSP sources are untouched. The upstream patc
 - Complete engine: all 253 build steps including final link pass locally with devkitA64 GCC 16.1.0. Existing upstream warnings remain; this is not a warning-free build.
 - Private converters report all checks passed. Their output remains outside the repository.
 - Engine startup and stall evidence is recorded separately from the memory diagnostic. No rendered gameplay, mission completion or performance claim follows from those results.
-- The new CI workflow is a build-only check. The previously approved deko3d diagnostic workflow does not validate the complete-engine path.
+- The complete-engine CI build passed: https://github.com/lloupp/lab-NX/actions/runs/39454406279 (commit `9f0d976`). The new CI workflow is a build-only check. The previously approved deko3d diagnostic workflow does not validate the complete-engine path.
 
-Next acceptance gate: resolve the stall in `load_font_tables()` inside `lvlStageLoad()` for Dam, reach a submitted real game display list and verify a visible Dam frame plus controller-driven movement. Then implement/validate the complete deko3d rendering path and repeat on physical Switch hardware.
+Next acceptance gate: resolve the Mesa/nouveau GPU shader rejection in official Eden, reach a submitted real game display list and verify a visible Dam frame plus controller-driven movement. Then implement/validate the complete deko3d rendering path and repeat on physical Switch hardware.
+
+Earlier pre-portal-fix NRO SHA256: `6120987c40c461c90319ac0a4cceba258ccc6143d5d6965b769100af7f85f8a6` (8,237,112 bytes; compiled from the published engine patch). The matching fresh-profile trace reaches the first font ROM copy and then records zero-frame heartbeats. The screenshot shows a stalled renderer, not gameplay.
+
+## Follow-up: actual stall found and corrected
+
+The last file-log line was an incomplete indicator: kernel register sampling found the main callback repeatedly inside `sub_GAME_7F0B37EC`, called by `load_bg_file`, not in the font loader. The scanner used `&g_BgCurrentRoom` as its table end, relying on the next global remaining adjacent to `specialportalarray`. ARM64 host layout does not guarantee that ordering/padding. Reading past the 20-byte table eventually entered an endless byte-index range ending in 255. The host path now uses the actual array extent and pointer-width comparison; N64 code keeps its original path.
+
+`tests/native/test_goldeneye_portal_bounds.py` extracts and compiles the actual scanner and table from the pinned source plus this patch. ASan/UBSan tests exercise 3 level cases, including both authored range sets. The original adjacency boundary reproduces a global buffer overflow with separated host symbols; the corrected boundary passes. No ROM is involved in this regression.
+
+After the fix, the full Dam level loader reaches its final video/control initialization checkpoints. Official Eden 0.2.1 then emits Maxwell shader decoder assertions (`Invalid insn`, including zero words) on the Mesa/nouveau path. Rendered-frame count remains zero. This is a GPU rendering blocker after mission loading, not a playable mission. The original font-loading interpretation is superseded by these register and sanitizer results.
+
+Current portal-fixed NRO SHA256: `fdd17cb00557502b40e36349c5f15686d50375e8369d1d9336277e4b798c7633` (8,237,112 bytes). See `portal-fixed-build-manifest.json` and the matching `engine-portal-fixed.txt` / `eden-mesa-shader-errors.txt`.

@@ -7,6 +7,7 @@ static unsigned char cart[0x6000000] __attribute__((aligned(4096)));
 static unsigned char stacks[16][0x800000] __attribute__((aligned(4096)));
 static GeSwitchMapping ram_map, cart_map, stack_maps[16];
 static unsigned stack_count;
+static Handle callback_handles[16];
 static void *map(GeSwitchMapping *m, void *backing, size_t size, uintptr_t a, uintptr_t b)
 {
     Result rc = geSwitchMapViews(m, backing, size, (void *)a, (void *)b);
@@ -66,7 +67,11 @@ typedef struct { void *(*entry)(void *); void *arg; void *stack; } GeThreadLaunc
 static void *geEngineThreadEntry(void *opaque) {
     GeThreadLaunch launch = *(GeThreadLaunch *)opaque;
     free(opaque);
-    return geSwitchCallOnLowStack(launch.entry, launch.arg, launch.stack, sizeof stacks[0]);
+    unsigned slot = ((uintptr_t)launch.stack - 0x40000000) / sizeof stacks[0];
+    __atomic_store_n(&callback_handles[slot], threadGetCurHandle(), __ATOMIC_RELEASE);
+    void *result = geSwitchCallOnLowStack(launch.entry, launch.arg, launch.stack, sizeof stacks[0]);
+    __atomic_store_n(&callback_handles[slot], 0, __ATOMIC_RELEASE);
+    return result;
 }
 int geEnginePthreadCreate(pthread_t *thread, const pthread_attr_t *attr,
                          void *(*entry)(void *), void *argument) {
@@ -80,4 +85,19 @@ int geEnginePthreadCreate(pthread_t *thread, const pthread_attr_t *attr,
 
 void geEngineCheckpoint(const char *name) { fprintf(stderr,"[ENGINE] entering %s\n",name); }
 
-void geEngineValues(const char *name, unsigned long long a, unsigned long long b) { fprintf(stderr,"[ENGINE] %s: %llx %llx\n",name,a,b); }
+
+void geEngineDumpRegisters(void) {
+    for (unsigned i=0;i<16;++i) {
+        Handle handle=__atomic_load_n(&callback_handles[i],__ATOMIC_ACQUIRE);
+        if (!handle || handle==threadGetCurHandle()) continue;
+        ThreadContext ctx={0};
+        Result pause=svcSetThreadActivity(handle,ThreadActivity_Paused);
+        Result read=pause, resume=0;
+        if (R_SUCCEEDED(pause)) {
+            read=svcGetThreadContext3(&ctx,handle);
+            resume=svcSetThreadActivity(handle,ThreadActivity_Runnable);
+        }
+        fprintf(stderr,"[ENGINE] registers slot=%u pause=%08x read=%08x resume=%08x pc=%lx lr=%lx sp=%lx fp=%lx x0=%lx x1=%lx x2=%lx anchor=%p\n",
+            i,pause,read,resume,ctx.pc.x,ctx.lr,ctx.sp,ctx.fp,ctx.cpu_gprs[0].x,ctx.cpu_gprs[1].x,ctx.cpu_gprs[2].x,(void *)geEngineCheckpoint);
+    }
+}

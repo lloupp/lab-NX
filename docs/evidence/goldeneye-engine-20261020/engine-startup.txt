@@ -1,5 +1,5 @@
 Switch ARM64 full engine entry; target Dam; gameplay not confirmed
-[INFO ] GoldenEye 007 PC port starting (ntsc-final, fda76b6 larkspur) -- https://github.com/jkdansereau/goldeneye-pc-port
+[INFO ] GoldenEye 007 PC port starting (ntsc-final, unknown larkspur) -- https://github.com/jkdansereau/goldeneye-pc-port
 [INFO ] config: no data/ge007.ini yet; writing defaults
 [INFO ] config: wrote data/ge007.ini
 [INFO ] all-unlocked: Game.AllUnlocked=0 (levels flag 0, 007 flag 0)
@@ -37,7 +37,6 @@ Switch map 42000000/52000000 size=800000 result=00000000
 [ENGINE] entering debInit
 [ENGINE] entering romCreateMesgQueue
 [ENGINE] entering tlbmanageEstablishManagementTable
-80bce3c0)
 [ENGINE] entering image_entries_load
 [ENGINE] entering mempInit
 [ENGINE] entering memaInit
@@ -46,7 +45,8 @@ Switch map 42000000/52000000 size=800000 result=00000000
 [ENGINE] entering viInitVideoSettings
 [ENGINE] entering indycommInit
 [ENGINE] entering obInit
-[INFO ] pcmodels: table patched (512 model entries)
+[NOTE ] [INFO ] pcmodels: table patched (512 model entries)first block on mq=0x8f95e990 from 0x809905d0 (rel 0x809905d0)
+
 [INFO ] pccg: table patched (86 bg/stan entries)
 [ENGINE] entering rspInit
 [ENGINE] entering dynInit
@@ -55,15 +55,15 @@ Switch map 42000000/52000000 size=800000 result=00000000
 [ENGINE] entering osSetTimer
 [NOTE ] timer set: t=0x40ffffa0 start=100000us period=0us mq=0x40ffff78
 [ENGINE] entering osRecvMesg
-[NOTE ] first block on mq=0x40ffff78 from 0x80bd479c (rel 0x80bd479c)
+[NOTE ] first block on mq=0x40ffff78 from 0x809969ac (rel 0x809969ac)
 [NOTE ] timer fire: t=0x40ffffa0 mq=0x40ffff78
 [ENGINE] entering osSetTimer
 [NOTE ] timer set: t=0x40ffffa0 start=100000us period=0us mq=0x40ffff78
 [ENGINE] entering osRecvMesg
 [NOTE ] timer fire: t=0x40ffffa0 mq=0x40ffff78
 [ENGINE] entering joyCheckStatusThreadSafe
-[NOTE ] first block on mq=0x8fb9e950 from 0x80bd20f8 (rel 0x80bd20f8)
-[NOTE ] first block on mq=0x8fb9e9b0 from 0x80bd211c (rel 0x80bd211c)
+[NOTE ] first block on mq=0x8f960a40 from 0x80994308 (rel 0x80994308)
+[NOTE ] first block on mq=0x8f960aa0 from 0x8099432c (rel 0x8099432c)
 [NOTE ] input: rescanned pads (mask=0xf, 4 controller(s))
 [INFO ] input: pad table rebuilt (presets 0/0/0/0, 0 unknown name(s))
 [ENGINE] entering osSetTimer
@@ -140,9 +140,10 @@ Switch map 42000000/52000000 size=800000 result=00000000
 [ENGINE] entering music:amStartAudioThread
 Switch map 42800000/52800000 size=800000 result=00000000
 [ENGINE] entering bossMainloop
-[ENGINE]first block on mq=0x8fb9de20 from 0x80bced80 (rel 0x80bced80)
+[ENGINE] entering stage:reset_mem_bank_5
 [ENGINE] entering stage:fileValidateSaves
-[NOTE ] first block on mq=0x8fb9de88 from 0x80bcee60 (rel 0x80bcee60)
+[NOTE ] first block on mq=0x8f95ff10 from 0x80990f90 (rel 0x80990f90)
+[NOTE ] first block on mq=0x8f95ff78 from 0x80991070 (rel 0x80991070)
 [INFO ] eeprom: no data/ge007.eep yet (fresh save)
 [NOTE ] D204: audio queue full (3008/2880 frames), dropped block #1
 [ENGINE] entering stage:fileSetCurrentFolder
@@ -159,50 +160,64 @@ Switch map 42800000/52800000 size=800000 result=00000000
 [ENGINE] entering stage:dynInitMemory
 [ENGINE] entering stage:joyCheckStatusThreadSafe
 [ENGINE] entering stage:lvlStageLoad
+[ENGINE] entering level:sndSetScalerApplyVolumeAllSfxSlot
+[ENGINE] entering level:musicTrack1ApplySeqpVol
+[ENGINE] entering level:musicTrack2ApplySeqpVol
+[ENGINE] entering level:musicTrack3ApplySeqpVol
+[ENGINE] entering level:sub_GAME_7F0C1364
+[ENGINE] entering level:modelmgrSetLevelResetting
+[ENGINE] entering level:set_mt_tex_alloc
+[ENGINE] entering level:bullet_sparks_reset_all
+[ENGINE] entering level:texReset
+[ENGINE] entering level:load_font_tables
+[ENGINE] font-symbols: 102e63f0 24b0
+[ENGINE] font-allocation: 701b0848 2798
+[ENGINE] font-romcopy-begin: 701b0848 24b0
+[ENGINE] font-romcopy-end: 701b0848 24b0
 [NOTE ] D204: audio queue full (3008/2880 frames), dropped block #129
 [ERROR] kernel heartbeat: no frame rendered for 8006 ms (frames=0); state:
-[ERROR]   T0(id=3) os=0x8fb9bf00 entry_rel=0x80bcd6c0 started=1 exited=0
-[ERROR]   T1(id=1) os=0x8fb9c0c0 entry_rel=0x80bcd390 started=1 exited=1
-[ERROR]   T2(id=0) os=0x8fb9c280 entry_rel=0x80b96bd0 started=1 exited=1
-[ERROR]   T3(id=2) os=0x8fb9c568 entry_rel=0x80bce390 started=1 exited=0
-[ERROR]   T4(id=4) os=0x8fb9dc60 entry_rel=0x80bced20 started=1 exited=0
-[ERROR]   mq=0x8fb9c540 valid=32/32 first=0
-[ERROR]   mq=0x8fb9c8a0 valid=0/8 first=7
-[ERROR]   mq=0x8fb9c908 valid=1/8 first=3
-[ERROR]   mq=0x8fb9e920 valid=0/1 first=0
-[ERROR]   mq=0x8fb9e980 valid=0/1 first=0
-[ERROR]   mq=0x8fbfe618 valid=0/1 first=0
-[ERROR]   mq=0x8fb9e950 valid=0/1 first=0
-[ERROR]   mq=0x8fb9e9b0 valid=0/1 first=0
-[ERROR]   mq=0x8fb9ea30 valid=1/10 first=8
+[ERROR]   T0(id=3) os=0x8f95dff0 entry_rel=0x8098f8d0 started=1 exited=0
+[ERROR]   T1(id=1) os=0x8f95e1b0 entry_rel=0x8098f5a0 started=1 exited=1
+[ERROR]   T2(id=0) os=0x8f95e370 entry_rel=0x809591c0 started=1 exited=1
+[ERROR]   T3(id=2) os=0x8f95e658 entry_rel=0x809905a0 started=1 exited=0
+[ERROR]   T4(id=4) os=0x8f95fd50 entry_rel=0x80990f30 started=1 exited=0
+[ERROR]   mq=0x8f95e630 valid=32/32 first=0
+[ERROR]   mq=0x8f95e990 valid=0/8 first=1
+[ERROR]   mq=0x8f95e9f8 valid=1/8 first=5
+[ERROR]   mq=0x8f960a10 valid=0/1 first=0
+[ERROR]   mq=0x8f960a70 valid=0/1 first=0
+[ERROR]   mq=0x8f9c0708 valid=0/1 first=0
+[ERROR]   mq=0x8f960a40 valid=0/1 first=0
+[ERROR]   mq=0x8f960aa0 valid=0/1 first=0
+[ERROR]   mq=0x8f960b20 valid=1/10 first=8
 [ERROR]   mq=0x40ffff78 valid=0/-2141186042 first=0
-[ERROR]   mq=0x812c0330 valid=0/8 first=0
-[ERROR]   mq=0x8fb9de88 valid=0/8 first=3
-[ERROR]   mq=0x8fb9de20 valid=0/8 first=4
-[ERROR]   mq=0x8fb9d1f0 valid=0/64 first=0
-[ERROR]   viRetraceMQ=0x8fb9c8a0 msg=666 tickInterval=16666 us
+[ERROR]   mq=0x81082330 valid=0/8 first=0
+[ERROR]   mq=0x8f95ff78 valid=0/8 first=5
+[ERROR]   mq=0x8f95ff10 valid=0/8 first=6
+[ERROR]   mq=0x8f95f2e0 valid=0/64 first=0
+[ERROR]   viRetraceMQ=0x8f95e990 msg=666 tickInterval=16666 us
 [ERROR] Switch thread dump unavailable (3 threads)
 [NOTE ] D204: audio queue full (3008/2880 frames), dropped block #257
-[ERROR] kernel heartbeat: no frame rendered for 13022 ms (frames=0); state:
-[ERROR]   T0(id=3) os=0x8fb9bf00 entry_rel=0x80bcd6c0 started=1 exited=0
-[ERROR]   T1(id=1) os=0x8fb9c0c0 entry_rel=0x80bcd390 started=1 exited=1
-[ERROR]   T2(id=0) os=0x8fb9c280 entry_rel=0x80b96bd0 started=1 exited=1
-[ERROR]   T3(id=2) os=0x8fb9c568 entry_rel=0x80bce390 started=1 exited=0
-[ERROR]   T4(id=4) os=0x8fb9dc60 entry_rel=0x80bced20 started=1 exited=0
-[ERROR]   mq=0x8fb9c540 valid=32/32 first=0
-[ERROR]   mq=0x8fb9c8a0 valid=0/8 first=3
-[ERROR]   mq=0x8fb9c908 valid=0/8 first=2
-[ERROR]   mq=0x8fb9e920 valid=0/1 first=0
-[ERROR]   mq=0x8fb9e980 valid=0/1 first=0
-[ERROR]   mq=0x8fbfe618 valid=0/1 first=0
-[ERROR]   mq=0x8fb9e950 valid=0/1 first=0
-[ERROR]   mq=0x8fb9e9b0 valid=0/1 first=0
-[ERROR]   mq=0x8fb9ea30 valid=1/10 first=1
+[ERROR] kernel heartbeat: no frame rendered for 13020 ms (frames=0); state:
+[ERROR]   T0(id=3) os=0x8f95dff0 entry_rel=0x8098f8d0 started=1 exited=0
+[ERROR]   T1(id=1) os=0x8f95e1b0 entry_rel=0x8098f5a0 started=1 exited=1
+[ERROR]   T2(id=0) os=0x8f95e370 entry_rel=0x809591c0 started=1 exited=1
+[ERROR]   T3(id=2) os=0x8f95e658 entry_rel=0x809905a0 started=1 exited=0
+[ERROR]   T4(id=4) os=0x8f95fd50 entry_rel=0x80990f30 started=1 exited=0
+[ERROR]   mq=0x8f95e630 valid=32/32 first=0
+[ERROR]   mq=0x8f95e990 valid=0/8 first=5
+[ERROR]   mq=0x8f95e9f8 valid=0/8 first=4
+[ERROR]   mq=0x8f960a10 valid=0/1 first=0
+[ERROR]   mq=0x8f960a70 valid=0/1 first=0
+[ERROR]   mq=0x8f9c0708 valid=0/1 first=0
+[ERROR]   mq=0x8f960a40 valid=0/1 first=0
+[ERROR]   mq=0x8f960aa0 valid=0/1 first=0
+[ERROR]   mq=0x8f960b20 valid=1/10 first=1
 [ERROR]   mq=0x40ffff78 valid=0/-2141186042 first=0
-[ERROR]   mq=0x812c0330 valid=0/8 first=0
-[ERROR]   mq=0x8fb9de88 valid=0/8 first=2
-[ERROR]   mq=0x8fb9de20 valid=0/8 first=2
-[ERROR]   mq=0x8fb9d1f0 valid=0/64 first=0
-[ERROR]   viRetraceMQ=0x8fb9c8a0 msg=666 tickInterval=16666 us
+[ERROR]   mq=0x81082330 valid=0/8 first=0
+[ERROR]   mq=0x8f95ff78 valid=0/8 first=4
+[ERROR]   mq=0x8f95ff10 valid=0/8 first=4
+[ERROR]   mq=0x8f95f2e0 valid=0/64 first=0
+[ERROR]   viRetraceMQ=0x8f95e990 msg=666 tickInterval=16666 us
 [ERROR] Switch thread dump unavailable (3 threads)
 [NOTE ] D204: audio queue full (3008/2880 frames), dropped block #385
