@@ -41,6 +41,8 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work \
             -e DEVKITPRO=/opt/devkitpro devkitpro/devkita64:latest \
             bash -eo pipefail -c '
+              export PATH=/opt/devkitpro/devkitA64/bin:$PATH
+              test -x /opt/devkitpro/devkitA64/bin/aarch64-none-elf-g++
               aarch64-none-elf-g++ -std=c++17 -O2 -Wall -Wextra -Werror \
                 -Iports/sotc -c ports/sotc/iso_disc.cpp \
                 -o /work/sotc_iso_arm64.o
