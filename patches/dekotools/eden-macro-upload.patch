@@ -1,0 +1,27 @@
+diff --git a/source/MmeDocument.cpp b/source/MmeDocument.cpp
+index c7f5077..4aafd69 100644
+--- a/source/MmeDocument.cpp
++++ b/source/MmeDocument.cpp
+@@ -108,11 +108,17 @@ void MmeDocument::GenerateHeader(FILE* f, const char* name, uint8_t subchannel)
+ 	fprintf(f, "#else\n");
+ 	fprintf(f, "static const uint32_t %s_SetupCmds[] = {\n", name);
+ 	fprintf(f, "#endif\n");
+-	fprintf(f, "\t0x%08X,\n", // MmeInstructionRamPointer+MmeInstructionRamLoad
+-		MakeCmdHeader(SubmissionMode::IncreaseOnce, 1+m_code.size(), subchannel, 0x45));
+-	fprintf(f, "\t0x%08X,\n", 0);
+-	for (size_t i = 0; i < m_code.size(); i ++)
+-		fprintf(f, "\t0x%08X,\n", m_code[i]);
++	// Compatibility experiment: identical GPU instructions at identical addresses,
++	// but expose every exported start as an independent uploaded suffix.
++	// Avoids Eden v0.2.1's invalidated mid-macro cache reference.
++	for (size_t e = 0; e < m_exports.size(); ++e) {
++		size_t start = m_exports[e]->second;
++		fprintf(f, "\t0x%08X,\n", MakeCmdHeader(SubmissionMode::IncreaseOnce,
++			1 + m_code.size() - start, subchannel, 0x45));
++		fprintf(f, "\t0x%08X,\n", (unsigned)start);
++		for (size_t i = start; i < m_code.size(); ++i)
++			fprintf(f, "\t0x%08X,\n", m_code[i]);
++	}
+ 	fprintf(f, "\t0x%08X,\n", // MmeStartAddressRamPointer+MmeStartAddressRamLoad
+ 		MakeCmdHeader(SubmissionMode::IncreaseOnce, 1+m_exports.size(), subchannel, 0x47));
+ 	fprintf(f, "\t0x%08X,\n", 0);

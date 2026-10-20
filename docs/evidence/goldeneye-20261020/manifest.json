@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-20",
+  "evidence_class": "generated diagnostic geometry, not game frames",
+  "eden": "0.2.1 official unmodified AppImage",
+  "eden_build_id": "c30f1493fd0259834c9b13b7c7d072a5805af1fb",
+  "driver": "Mesa 25.2.8 llvmpipe (LLVM 20.1.2)",
+  "toolchain": "devkitA64 GCC 16.1.0; libnx 4.12.0; deko3d 0.5.0; uam 1.1.0",
+  "final_nro": {
+    "name": "goldeneye-deko-mme.nro",
+    "size": 317164,
+    "sha256": "2eda31ee3adc693b333310e64716b135bd8e4ee33645babe04ffa80552c0680a"
+  },
+  "reproduction_script": "scripts/build_goldeneye_deko_compat.py",
+  "captured_with_final_nro": [
+    "triangle-repeat-without-observer.png",
+    "guest-repeat-without-observer.txt"
+  ],
+  "performance": "Not benchmarked. Status bar varied between 1 and 60 FPS across captures; no stable performance claim.",
+  "physical_switch_tested": false,
+  "game_engine_linked": false,
+  "proprietary_resources_published": false
+}

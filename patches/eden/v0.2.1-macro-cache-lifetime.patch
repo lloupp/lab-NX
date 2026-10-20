@@ -1,0 +1,33 @@
+diff --git a/src/video_core/macro.cpp b/src/video_core/macro.cpp
+index 606162b..e8776f4 100644
+--- a/src/video_core/macro.cpp
++++ b/src/video_core/macro.cpp
+@@ -1420,11 +1420,14 @@ void MacroEngine::Execute(Engines::Maxwell3D& maxwell3d, u32 method, std::span<c
+         }
+         auto& ci = macro_cache[method];
+         if (mid_method) {
+-            const auto& macro_cached = uploaded_macro_code[mid_method.value()];
++            const auto& macro_cached = uploaded_macro_code.at(mid_method.value());
+             const auto rebased_method = method - mid_method.value();
++            // unordered_dense insertion may relocate its values. Materialize
++            // the suffix before inserting, never retain a reference across it.
++            std::vector<u32> suffix(macro_cached.begin() + rebased_method,
++                                    macro_cached.end());
+             auto& code = uploaded_macro_code[method];
+-            code.resize(macro_cached.size() - rebased_method);
+-            std::memcpy(code.data(), macro_cached.data() + rebased_method, code.size() * sizeof(u32));
++            code = std::move(suffix);
+             ci.hash = Common::HashValue(code);
+             ci.program = Compile(maxwell3d, code);
+         } else {
+@@ -1438,7 +1441,9 @@ void MacroEngine::Execute(Engines::Maxwell3D& maxwell3d, u32 method, std::span<c
+         }
+         execute_variant(ci.program);
+         if (Settings::values.dump_macros) {
+-            Dump(ci.hash, macro_code->second, !std::holds_alternative<std::monostate>(ci.program));
++            // macro_code may be end() (mid-macro path) or invalidated above.
++            Dump(ci.hash, uploaded_macro_code.at(method),
++                 !std::holds_alternative<std::monostate>(ci.program));
+         }
+     }
+ }

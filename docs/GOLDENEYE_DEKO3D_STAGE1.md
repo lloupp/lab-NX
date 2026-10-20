@@ -1,5 +1,10 @@
 # GoldenEye NX — primeiro bootstrap deko3d ARM64 (19/10/2026)
 
+Atualização 20/10: a fila foi desbloqueada por upload independente de macros
+MME; triângulo diagnóstico capturado no Eden. Este documento permanece como
+registro histórico. Evidências e limites atuais:
+[integração ARM64/Fast3D](GOLDENEYE_ARM64_FAST3D_WORK_20261020.md).
+
 ## Escopo e base
 
 A branch **`feat/goldeneye-deko3d-stage1-20261019`** foi criada a partir da branch REMOTA `feat/goldeneye-ptbr-localization`. A branch **local** `feat/goldeneye-switch-engine-port` com o commit de memória N64 `d932006` **não foi alterada, não foi incluída e não foi publicada**. Integração com ela precisa acontecer explicitamente após publicar/transferir esse commit, evitando perder o estado local.
