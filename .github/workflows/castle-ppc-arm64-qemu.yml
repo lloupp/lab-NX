@@ -1,0 +1,91 @@
+name: Switch PPC interpreter on native-equivalent Linux ARM64 (QEMU)
+on:
+  push:
+    branches: [feat/castle-arm64-private-ppc-proof]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+
+jobs:
+  arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install AArch64 cross compiler and user-mode emulator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu qemu-user-static
+          aarch64-linux-gnu-gcc --version | head -1
+          qemu-aarch64-static --version | head -1
+      - name: Cross-compile identical Switch PPC interpreter and Linux driver
+        run: |
+          set -euo pipefail
+          mkdir -p arm64-out
+          aarch64-linux-gnu-gcc -std=c11 -Wall -Wextra -Werror \
+            -O2 -static -I switch/castle_bootstrap/include \
+            switch/castle_bootstrap/source/ppc_pe.c \
+            switch/castle_bootstrap/tests/ppc_leaf_linux_probe.c \
+            -o arm64-out/ppc_leaf_probe.aarch64
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            -I switch/castle_bootstrap/include \
+            switch/castle_bootstrap/source/ppc_pe.c \
+            switch/castle_bootstrap/tests/ppc_leaf_linux_probe.c \
+            -o arm64-out/ppc_leaf_probe.x86_64
+          file arm64-out/ppc_leaf_probe.aarch64
+          aarch64-linux-gnu-readelf -h arm64-out/ppc_leaf_probe.aarch64 \
+            | grep -E 'Machine:|Class:|Type:'
+      - name: Exercise both CPU architectures against identical synthetic PE
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=bytearray(4096)
+          b[:2]=b'MZ'
+          struct.pack_into('<I',b,0x3c,0x80)
+          b[0x80:0x84]=b'PE\0\0'
+          struct.pack_into('<HHIIIHH',b,0x84,0x01f2,1,0,0,0,224,0x102)
+          opt=0x80+24
+          struct.pack_into('<H',b,opt,0x10b)
+          struct.pack_into('<I',b,opt+28,0x82000000)
+          sec=opt+224
+          struct.pack_into('<8sIIIIIIHHI',b,sec,b'.text\0\0\0',
+                           0x200,0x50000,0x200,0x400,0,0,0,0,0x60000020)
+          # Synthetic: addi r3,r3,104 ; blr
+          b[0x400:0x408]=bytes.fromhex('386300684e800020')
+          Path('arm64-out/synthetic-pe.bin').write_bytes(b)
+          PY
+          arm64-out/ppc_leaf_probe.x86_64 arm64-out/synthetic-pe.bin 0x82050000 17 121 | tee arm64-out/host-result.json
+          qemu-aarch64-static arm64-out/ppc_leaf_probe.aarch64 \
+            arm64-out/synthetic-pe.bin 0x82050000 17 121 \
+            | tee arm64-out/qemu-result.json
+          qemu-aarch64-static arm64-out/ppc_leaf_probe.aarch64 \
+            arm64-out/synthetic-pe.bin 0x82050000 4294967295 103 \
+            | tee arm64-out/qemu-wraparound.json
+          # Unsupported PPC call fails closed.
+          if qemu-aarch64-static arm64-out/ppc_leaf_probe.aarch64 \
+            arm64-out/synthetic-pe.bin 0x82050004 17 121; then
+            echo "Unexpected acceptance of terminal return without full expected sequence" >&2
+            exit 1
+          fi
+          sha256sum arm64-out/ppc_leaf_probe.aarch64 \
+            > arm64-out/aarch64-binary-sha256.txt
+      - name: Stage redistributable QEMU executable for PRIVATE real PE test
+        run: |
+          set -euo pipefail
+          cp "$(command -v qemu-aarch64-static)" arm64-out/qemu-aarch64-static
+          cp /usr/share/doc/qemu-user-static/copyright arm64-out/QEMU_LICENSE_INFO
+          echo "Only synthetic PE was used in GitHub CI; the original Castle PPC PE is never uploaded." \
+            > arm64-out/README-private-use.txt
+          echo "Run: ./qemu-aarch64-static ./ppc_leaf_probe.aarch64 /PRIVATE/decoded-powerpc.bin 0x8208EE10 17 121" \
+            >> arm64-out/README-private-use.txt
+          rm -f arm64-out/synthetic-pe.bin
+          sha256sum arm64-out/qemu-aarch64-static \
+            >> arm64-out/aarch64-binary-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-ppc-interpreter-qemu-private-test-kit
+          path: arm64-out/
+          retention-days: 5
+          if-no-files-found: error
