@@ -7,16 +7,27 @@
   "toolchain": "devkitA64 GCC 16.1.0; libnx 4.12.0; deko3d 0.5.0; uam 1.1.0",
   "final_nro": {
     "name": "goldeneye-deko-mme.nro",
-    "size": 317164,
-    "sha256": "2eda31ee3adc693b333310e64716b135bd8e4ee33645babe04ffa80552c0680a"
+    "size": 313068,
+    "sha256": "8fe10b61d3a45ed9bc5a98cd51050793fbca4f42f9b8e2ada05fdee77fba9ee9",
+    "source_commit": "a74139ed517ec69bf3168dd61aad612e0023d723"
   },
   "reproduction_script": "scripts/build_goldeneye_deko_compat.py",
   "captured_with_final_nro": [
-    "triangle-repeat-without-observer.png",
-    "guest-repeat-without-observer.txt"
+    "triangle-fresh-profile.png",
+    "guest-fresh-profile.txt"
   ],
   "performance": "Not benchmarked. Status bar varied between 1 and 60 FPS across captures; no stable performance claim.",
   "physical_switch_tested": false,
   "game_engine_linked": false,
-  "proprietary_resources_published": false
+  "proprietary_resources_published": false,
+  "earlier_nro": {
+    "name": "goldeneye-deko-mme.nro",
+    "size": 317164,
+    "sha256": "2eda31ee3adc693b333310e64716b135bd8e4ee33645babe04ffa80552c0680a"
+  },
+  "fresh_profile_tested": true,
+  "ci_built_nro_also_tested_locally": {
+    "sha256": "370b9e6022aa348faf78348ec852b6900def1f03c1a096804991b2afb9d25324",
+    "result": "triangle rendered, 120+ submissions (before fresh-SD trace fix)"
+  }
 }

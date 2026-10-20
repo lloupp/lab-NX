@@ -6,7 +6,7 @@ The `dkQueueCreate()` blocker is bypassed in **unmodified official Eden 0.2.1** 
 
 This is a real ARM64 Switch NRO executing deko3d commands, **not GoldenEye gameplay, a game display list, or physical Switch validation**.
 
-![Generated diagnostic triangle in Eden, not gameplay](evidence/goldeneye-20261020/triangle-60fps.png)
+![Generated diagnostic triangle in a fresh Eden profile, not gameplay](evidence/goldeneye-20261020/triangle-fresh-profile.png)
 
 ## Preserved work
 
@@ -24,9 +24,17 @@ This is a real ARM64 Switch NRO executing deko3d commands, **not GoldenEye gamep
 5. Eden v0.2.1 source, mirror commit `58c1e20ee58efa3900ba616207d460886214480b`, has the corresponding `MacroEngine::Execute` mid-macro path. It retains a vector reference inside `ankerl::unordered_dense::map`, inserts another entry, then reads the invalidated reference. The pinned dependency `7b55cab8418da1603496462ce3ccdb4cb1dc3368` reproduces this as an ASan **heap-use-after-free** in the isolated regression.
 6. `patches/eden/v0.2.1-macro-cache-lifetime.patch` materializes the suffix before insertion and fixes a separate stale/end iterator in macro dumping. **The isolated corrected algorithm passes; a complete patched Eden executable was not built.**
 7. The optional dekotools patch avoids mid-macro extraction by uploading every exported suffix directly. GPU instruction addresses/bytes and entry bindings remain identical: **181 instructions / 14 exports**, checked byte for byte. Queue command memory remains 64 KiB.
-8. A second baseline compiled from the **same pinned deko3d source**, with the original generator, still fails. With the modified generator, queue creation returns and the triangle appears. A repeat without the exception observer also renders the triangle and reaches 120+ frame submissions. See `triangle-repeat-without-observer.png` and `manifest.json` for the final reproduced NRO hash.
+8. A second baseline compiled from the **same pinned deko3d source**, with the original generator, still fails. With the modified generator, queue creation returns and the triangle appears. A repeat without the exception observer also renders the triangle and reaches 120+ frame submissions. The earlier repeat is `triangle-repeat-without-observer.png`; the final trace-reset fix is captured in `triangle-fresh-profile.png`, with its NRO hash in `manifest.json`.
 
 The Work environment exposes Mesa 25.2.8 llvmpipe software Vulkan, no physical GPU. The status bar varied between 1 and 60 FPS across captures; stable performance has not been benchmarked. The screenshot proves a rendered diagnostic, not 60 FPS game performance. The observer also saw caught Vulkan exceptions during the successful run; this is not treated as a validated long-term stability result.
+
+## Fresh-profile startup regression
+
+The first remote Eden run exposed a separate failure before the first guest trace. A SIGSEGV observer localized it to the emulator's filesystem `DeleteDirectory` path: our new trace reset used newlib `remove()` on a nonexistent file before creating its parent directories. The fallback directory-delete request reached a null parent in Eden. Existing local SD directories had hidden this problem.
+
+Commit `a74139e` creates the trace parents and truncates the file using `fopen(..., "w")`, avoiding that request. A completely empty local XDG data/config profile then rendered the triangle and submitted 120+ frames; `triangle-fresh-profile.png` and `guest-fresh-profile.txt` record this test. CPU fastmem experiments did not resolve the filesystem failure and were removed. CI uses ordinary CPU defaults and isolated XDG paths.
+
+The NRO downloaded from the successful CI ARM64 build was also executed locally and rendered correctly. That confirms the remote build artifact separately from the remote emulator run. The remote tests/build passed; final cold-profile Eden CI results must be read at the run linked from PR #24. No failed execution is treated as a pass.
 
 ## Incremental engine-facing code
 
