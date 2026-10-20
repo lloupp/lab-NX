@@ -26,7 +26,7 @@ jobs:
           test "$(git -C celosia rev-parse HEAD)" = 0d5c35dde50390ccf9a35aa7ae146cfe3ee92168
       - name: Configure real native Celosia host runtime
         run: |
-          cmake -S celosia/PS2Recomp -B celosia-host-build -G Ninja             -DCMAKE_BUILD_TYPE=RelWithDebInfo             -DPS2X_BUILD_RECOMP=OFF             -DPS2X_BUILD_ANALYZER=OFF             -DPS2X_BUILD_TEST=OFF             -DPS2X_BUILD_STUDIO=OFF             -DPS2X_ENABLE_DEBUG_UI=OFF             -DPS2X_ENABLE_FFMPEG=OFF             -DPS2X_ENABLE_RUNNER_PCH=OFF             -DPS2X_ENABLE_RUNNER_UNITY_BUILD=OFF
+          cmake -S celosia/PS2Recomp -B celosia-host-build -G Ninja             -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-msse4.1             -DPS2X_BUILD_RECOMP=OFF             -DPS2X_BUILD_ANALYZER=OFF             -DPS2X_BUILD_TEST=OFF             -DPS2X_BUILD_STUDIO=OFF             -DPS2X_ENABLE_DEBUG_UI=OFF             -DPS2X_ENABLE_FFMPEG=OFF             -DPS2X_ENABLE_RUNNER_PCH=OFF             -DPS2X_ENABLE_RUNNER_UNITY_BUILD=OFF
       - name: Build original native runtime libraries (no guest data)
         run: |
           cmake --build celosia-host-build --target ps2_runtime ps2_iop -j2
