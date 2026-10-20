@@ -1,6 +1,7 @@
 """Experimental restricted PowerPC -> native C++ lifter for private game PE snippets.
 
-Only basic integer instructions and a terminal BLR. The private input\nis the decrypted XEX MEMORY IMAGE, indexed by RVA rather than disk raw offset. No Xbox runtime, memory,
+Only basic integer instructions and a terminal BLR. The private input
+is the decrypted XEX MEMORY IMAGE, indexed by RVA rather than disk raw offset. No Xbox runtime, memory,
 branches, or graphics. Never includes protected binary bytes in source control.
 Generated C++ is derived from the provided PE and MUST stay outside Git.
 """
