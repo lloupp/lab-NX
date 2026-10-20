@@ -1,0 +1,110 @@
+name: Eden 0.2.1 OpenGL guest ARM64 proof (no game or keys)
+on:
+  push:
+    branches: [feat/castle-eden-memory-analysis]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  build-stage1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate private authorized-game runner and PSS profiler
+        run: |
+          bash -n scripts/eden_stage1_private.sh
+          python3 -m py_compile scripts/compare_emulator_memory.py
+      - name: Build unchanged ARM64 stage-1 NRO
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -e DEVKITPRO=/opt/devkitpro \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work/switch/castle_bootstrap \
+            devkitpro/devkita64:20260219 make -j2
+          python3 switch/castle_bootstrap/tests/inspect_nro.py \
+            switch/castle_bootstrap/castle_nx_bootstrap.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage1-eden-opengl-nro
+          path: switch/castle_bootstrap/castle_nx_bootstrap.nro
+          retention-days: 3
+  eden-renderer-matrix:
+    needs: build-stage1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      matrix:
+        renderer: ['0', '1', '2']
+    env:
+      RENDERER_BACKEND: ${{ matrix.renderer }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage1-eden-opengl-nro
+          path: input
+      - name: Install software OpenGL and screenshot tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb imagemagick libgl1-mesa-dri mesa-utils
+      - name: Recover pinned Eden 0.2.1 AppImage
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --max-time 240 \
+            'https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-gcc-standard.AppImage' \
+            -o Eden.AppImage
+          echo '2fae658397daf13c118082a3eb65d61a6519967b5e22e6667756baecf6000c5a  Eden.AppImage' | sha256sum -c
+          chmod +x Eden.AppImage
+          ./Eden.AppImage --appimage-extract >/dev/null
+          test -f squashfs-root/bin/eden-cli
+          ./squashfs-root/AppRun eden-cli --help | tee eden-cli-help.txt
+      - name: Launch Eden SDL2 CLI in software OpenGL with large-memory runner
+        run: |
+          set -euo pipefail
+          mkdir -p evidence home/config home/data/eden/nand home/data/eden/sdmc home/cache home/runtime
+          chmod 700 home/runtime
+          cat > home/sdl2-config.ini <<INI
+          [Renderer]
+          backend\default=false
+          backend=$RENDERER_BACKEND
+          [Core]
+          memory_layout_mode\default=false
+          memory_layout_mode=0
+          INI
+          echo "Eden CLI renderer=$RENDERER_BACKEND, public stage-1 NRO, no firmware, no keys" > evidence/scope.txt
+          DISPLAY=:99 glxinfo -B > evidence/glxinfo-before.txt 2>&1 || true
+          xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
+            env HOME="$PWD/home" XDG_CONFIG_HOME="$PWD/home/config" \
+              XDG_DATA_HOME="$PWD/home/data" XDG_CACHE_HOME="$PWD/home/cache" \
+              XDG_RUNTIME_DIR="$PWD/home/runtime" SDL_AUDIODRIVER=dummy \
+              LIBGL_ALWAYS_SOFTWARE=1 LIBGL_DRI3_DISABLE=1 \
+              MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
+              QT_QPA_PLATFORM=xcb \
+            python3 scripts/compare_emulator_memory.py \
+              --output evidence/eden --seconds 45 --limit-mb 8500 -- \
+              "$PWD/squashfs-root/AppRun" eden-cli \
+              --config "$PWD/home/sdl2-config.ini" \
+              --game "$PWD/input/castle_nx_bootstrap.nro" \
+            > evidence/summary.json
+          echo '=== Markers in emulator stdout ===' > evidence/markers.txt
+          grep -a -E 'LABNX_CASTLE_STAGE0_MAIN_ENTERED|LABNX_GUEST_PPC_LEAF_EXECUTED|STAGE-1|Loading.*NRO|Error|error' \
+            evidence/eden/emulator.log | tail -60 >> evidence/markers.txt || true
+          echo '=== Generated emulator log file candidates ===' >> evidence/markers.txt
+          find home -type f \( -iname '*.log' -o -name 'sdl2-config.ini' \) \
+            -size -5M -print >> evidence/markers.txt || true
+          for logfile in $(find home -type f -iname '*.log' -size -5M); do
+            grep -a -E 'LABNX_CASTLE_STAGE0_MAIN_ENTERED|LABNX_GUEST_PPC_LEAF_EXECUTED|STAGE-1' \
+              "$logfile" >> evidence/markers.txt || true
+          done
+          # A successful CI task only proves bounded diagnostics. If marker absent, NO guest proof.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eden-stage1-renderer-${{ matrix.renderer }}-proof
+          path: |
+            evidence/
+            eden-cli-help.txt
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,140 @@
+name: Ryubing headless ARM64 NRO execution proof (no game)
+on:
+  push:
+    branches: [feat/castle-eden-memory-analysis]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build true libnx AArch64 NRO
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -e DEVKITPRO=/opt/devkitpro \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work/switch/castle_bootstrap \
+            devkitpro/devkita64:20260219 make -j2
+          python3 switch/castle_bootstrap/tests/inspect_nro.py \
+            switch/castle_bootstrap/castle_nx_bootstrap.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage1-ryubing-headless-nro
+          path: switch/castle_bootstrap/castle_nx_bootstrap.nro
+          retention-days: 2
+
+  ryubing-headless:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage1-ryubing-headless-nro
+          path: input
+      - name: Install Flatpak and software OpenGL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatpak xvfb imagemagick dbus-x11 mesa-utils libgl1-mesa-dri
+          sudo sysctl -w vm.max_map_count=1048576 || true
+          sudo flatpak remote-add --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y --noninteractive \
+            flathub io.github.ryubing.Ryujinx
+          mkdir -p ryu-headless results
+          cat /proc/sys/vm/max_map_count > results/max-map-count.txt
+          flatpak info io.github.ryubing.Ryujinx > results/flatpak-info.txt
+      - name: Verify headless flags and actual binary available
+        run: |
+          set +e
+          timeout 15s flatpak run \
+            io.github.ryubing.Ryujinx --no-gui --help \
+            > results/headless-help.log 2>&1
+          echo "headless_help_exit=$?" > results/headless-help-status.txt
+          set -e
+          grep -Ei 'root-data-dir|graphics-backend|disable-ptc|input to load' \
+            results/headless-help.log | head -30 || true
+      - name: Verify exact NRO file can be read inside Flatpak sandbox
+        run: |
+          set -euo pipefail
+          flatpak run \
+            --filesystem="$PWD/input":ro \
+            --filesystem="$PWD/ryu-headless" \
+            --command=sh io.github.ryubing.Ryujinx \
+            -c 'test -r "$1" && stat -c "%s bytes" "$1" && od -An -tx1 -j16 -N4 "$1"' \
+            sh "$PWD/input/castle_nx_bootstrap.nro" \
+            > results/sandbox-nro-file-readable.txt 2>&1
+          grep -q '4e 52 4f 30' results/sandbox-nro-file-readable.txt
+      - name: Launch real ARM64 NRO directly using Ryubing headless
+        run: |
+          set -euo pipefail
+          test -f input/castle_nx_bootstrap.nro
+          mkdir -p ryu-headless/system
+          # NO real Switch firmware or console keys. Homebrew only.
+          # No synthetic content is substituted for the Castle NRO.
+          echo "Ryubing headless load of NRO; no firmware or keys supplied" > results/scope.txt
+          xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
+            env SDL_AUDIODRIVER=dummy \
+            python3 scripts/compare_emulator_memory.py \
+            --output results/headless --seconds 65 --limit-mb 3000 -- \
+            dbus-run-session -- flatpak run \
+            --filesystem="$PWD/input":ro \
+            --filesystem="$PWD/ryu-headless" \
+            io.github.ryubing.Ryujinx \
+            --no-gui --root-data-dir "$PWD/ryu-headless" \
+            --graphics-backend OpenGl \
+            --audio-volume 0 \
+            "$PWD/input/castle_nx_bootstrap.nro" \
+            > results/headless-report.json
+          grep -E -i \
+            'LABNX_CASTLE_STAGE0_MAIN_ENTERED|LABNX_GUEST_PPC_LEAF_EXECUTED|Loading as Homebrew|Loaded|error|fail|exception|unhandled' \
+            results/headless/emulator.log | tail -90 > results/interesting-lines.txt || true
+          echo 'A successful Actions job does not prove guest execution; inspect actual markers.' >> results/scope.txt
+      - name: Download independently built public hbmenu NRO as emulator control
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --max-time 90 \
+            'https://github.com/switchbrew/nx-hbmenu/releases/download/v3.6.1/nx-hbmenu_v3.6.1.zip' \
+            -o results/public-hbmenu.zip
+          echo '4790c58fdd75c4bcc644fa8135fa11c380cb3ebaf685e400e336031972410ee7  results/public-hbmenu.zip' | sha256sum -c
+          MEMBER="$(unzip -Z -1 results/public-hbmenu.zip | grep -E '(^|/)hbmenu\.nro$' | head -1)"
+          test -n "$MEMBER"
+          unzip -p results/public-hbmenu.zip "$MEMBER" > results/reference-hbmenu.nro
+          python3 switch/castle_bootstrap/tests/inspect_nro.py results/reference-hbmenu.nro \
+            > results/reference-header.txt
+          sha256sum results/reference-hbmenu.nro > results/reference-nro-sha256.txt
+          # Commercial content is never used here; reference is GPL homebrew.
+      - name: Independently verify Ryubing can load public reference NRO
+        run: |
+          set -euo pipefail
+          mkdir -p ryu-public-control
+          xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
+            env SDL_AUDIODRIVER=dummy \
+            python3 scripts/compare_emulator_memory.py \
+            --output results/reference-ryubing --seconds 35 --limit-mb 5500 -- \
+            dbus-run-session -- flatpak run \
+            --filesystem="$PWD/results":ro \
+            --filesystem="$PWD/ryu-public-control" \
+            io.github.ryubing.Ryujinx \
+            --no-gui --root-data-dir "$PWD/ryu-public-control" \
+            --graphics-backend OpenGl --audio-volume 0 \
+            "$PWD/results/reference-hbmenu.nro" \
+            > results/reference-report.json
+          grep -i -E 'Loading as Homebrew|not supported|started|process|exception|error|fail' \
+            results/reference-ryubing/emulator.log \
+            | tail -65 > results/reference-interesting-lines.txt || true
+          # Do not publish the third-party binary inside the artifact;
+          # all hashes, reports and screenshots remain available.
+          rm -f results/public-hbmenu.zip results/reference-hbmenu.nro
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ryubing-headless-nro-evidence
+          path: results/
+          if-no-files-found: warn
+          retention-days: 7
