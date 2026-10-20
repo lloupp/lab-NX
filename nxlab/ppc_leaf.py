@@ -1,6 +1,6 @@
 """Experimental restricted PowerPC -> native C++ lifter for private game PE snippets.
 
-Only basic integer instructions and a terminal BLR. No Xbox runtime, memory,
+Only basic integer instructions and a terminal BLR. The private input\nis the decrypted XEX MEMORY IMAGE, indexed by RVA rather than disk raw offset. No Xbox runtime, memory,
 branches, or graphics. Never includes protected binary bytes in source control.
 Generated C++ is derived from the provided PE and MUST stay outside Git.
 """
@@ -36,10 +36,10 @@ def _sections(data):
         raw_size = int.from_bytes(data[p+16:p+20], 'little')
         offset = int.from_bytes(data[p+20:p+24], 'little')
         flags = int.from_bytes(data[p+36:p+40], 'little')
-        if offset + raw_size > len(data):
+        if rva + raw_size > len(data):
             raise LiftError('Invalid PE section')
         if flags & 0x20000000:
-            sections.append((name,base+rva,raw_size,offset))
+            sections.append((name,base+rva,raw_size,rva))
     return sections
 
 
