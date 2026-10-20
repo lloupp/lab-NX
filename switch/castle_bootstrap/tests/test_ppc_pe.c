@@ -7,14 +7,17 @@ static void wr16(unsigned char *b,uint32_t off,uint16_t v){b[off]=v;b[off+1]=v>>
 static void wr32(unsigned char *b,uint32_t off,uint32_t v){for(int i=0;i<4;i++)b[off+i]=(unsigned char)(v>>(8*i));}
 static void be32(unsigned char *b,uint32_t off,uint32_t v){for(int i=0;i<4;i++)b[off+i]=(unsigned char)(v>>(24-8*i));}
 static FILE *mkpe(uint32_t a,uint32_t b){
-    static unsigned char data[0x51000];\n    memset(data,0,sizeof(data));
+    static unsigned char data[0x51000];
+    memset(data,0,sizeof(data));
     memcpy(data,"MZ",2);wr32(data,0x3c,0x80);
     memcpy(data+0x80,"PE\0\0",4);wr16(data,0x84,0x1F2);wr16(data,0x86,1);wr16(data,0x94,224);
     wr16(data,0x98,0x10b);wr32(data,0x98+28,0x82000000);
     unsigned sec=0x80+24+224;
     memcpy(data+sec,".text",5);wr32(data,sec+12,0x50000);wr32(data,sec+16,0x200);
     wr32(data,sec+20,0x400);wr32(data,sec+36,0x60000020);
-    /* Poison old disk-offset path; only mapped RVA 0x50000 is executable. */\n    be32(data,0x400,0x48000000u);\n    be32(data,0x50000,a);be32(data,0x50004,b);
+    /* Poison old disk-offset path; only mapped RVA 0x50000 is executable. */
+    be32(data,0x400,0x48000000u);
+    be32(data,0x50000,a);be32(data,0x50004,b);
     FILE *f=tmpfile();assert(f);assert(fwrite(data,1,sizeof(data),f)==sizeof(data));rewind(f);return f;
 }
 int main(void){
