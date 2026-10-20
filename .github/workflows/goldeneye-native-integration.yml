@@ -150,12 +150,6 @@ jobs:
           mkdir -p eden-evidence
           export XDG_CONFIG_HOME="$PWD/eden-config" XDG_DATA_HOME="$PWD/eden-data"
           mkdir -p "$XDG_CONFIG_HOME/eden" "$XDG_DATA_HOME"
-          # Investigate hosted-CPU SIGSEGV before main with fastmem disabled.
-          # Debugging accuracy enables this explicit Dynarmic setting.
-          printf '%s\n' '[Cpu]' 'cpu_accuracy\default=false' 'cpu_accuracy=4' \
-            'cpuopt_fastmem\default=false' 'cpuopt_fastmem=false' \
-            'cpuopt_fastmem_exclusives\default=false' 'cpuopt_fastmem_exclusives=false' \
-            > "$XDG_CONFIG_HOME/eden/qt-config.ini"
           export QT_QPA_PLATFORM=xcb
           export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
           export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
