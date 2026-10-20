@@ -8,7 +8,7 @@ from nxlab.ppc_leaf import LiftError, decode, generate_cpp, interpret, fetch_wor
 
 
 def make_pe(program):
-    data=bytearray(4096)
+    data=bytearray(0x6000)
     data[:2]=b'MZ'
     struct.pack_into('<I',data,0x3c,0xf0)
     data[0xf0:0xf4]=b'PE\0\0'
@@ -19,8 +19,8 @@ def make_pe(program):
     struct.pack_into('<I',data,opt+28,0x82000000)
     section=opt+224
     struct.pack_into('<8sIIIIIIHHI',data,section,b'.text\0\0\0',0x200,0x5000,0x200,0x400,0,0,0,0,0x60000020)
-    for n,word in enumerate(program):
-        data[0x400+4*n:0x404+4*n]=word.to_bytes(4,'big')
+    data[0x400:0x404]=b'\x48\x00\x00\x00'  # poison conventional disk PE offset\n    for n,word in enumerate(program):
+        data[0x5000+4*n:0x5004+4*n]=word.to_bytes(4,'big')
     return bytes(data)
 
 
