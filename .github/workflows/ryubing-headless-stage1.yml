@@ -91,11 +91,7 @@ jobs:
             'https://github.com/switchbrew/nx-hbmenu/releases/download/v3.6.1/nx-hbmenu_v3.6.1.zip' \
             -o results/public-hbmenu.zip
           echo '4790c58fdd75c4bcc644fa8135fa11c380cb3ebaf685e400e336031972410ee7  results/public-hbmenu.zip' | sha256sum -c
-          MEMBER="$(unzip -Z -1 results/public-hbmenu.zip | grep -E '(^|/)hbmenu\.nro
-          path: results/
-          if-no-files-found: warn
-          retention-days: 7
- | head -1)"
+          MEMBER="$(unzip -Z -1 results/public-hbmenu.zip | grep -E '(^|/)hbmenu\.nro$' | head -1)"
           test -n "$MEMBER"
           unzip -p results/public-hbmenu.zip "$MEMBER" > results/reference-hbmenu.nro
           python3 switch/castle_bootstrap/tests/inspect_nro.py results/reference-hbmenu.nro \
