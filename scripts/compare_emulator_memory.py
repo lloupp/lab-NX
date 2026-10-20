@@ -26,7 +26,7 @@ def group_pids(pgid):
 
 
 def usage_kib(pid):
-    rss = virtual = 0
+    rss = virtual = pss = 0
     try:
         with open(f"/proc/{pid}/status", encoding="utf-8") as f:
             for line in f:
@@ -36,7 +36,15 @@ def usage_kib(pid):
                     virtual = int(line.split()[1])
     except (OSError, ValueError, IndexError):
         pass
-    return rss, virtual
+    try:
+        with open(f"/proc/{pid}/smaps_rollup", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("Pss:"):
+                    pss = int(line.split()[1])
+                    break
+    except (OSError, ValueError, IndexError):
+        pass
+    return rss, virtual, pss
 
 
 def screenshot(path):
@@ -85,8 +93,10 @@ def measure(command, dest, seconds=25.0, limit_mb=2800, every=0.5,
                 measurements = [usage_kib(pid) for pid in pids]
                 rss_kib = sum(m[0] for m in measurements)
                 virtual_kib = sum(m[1] for m in measurements)
+                pss_kib = sum(m[2] for m in measurements)
                 samples.append({"time_s": round(elapsed, 2),
                                 "rss_mib": round(rss_kib / 1024, 2),
+                                "pss_mib": round(pss_kib / 1024, 2),
                                 "virtual_mib": round(virtual_kib / 1024, 2),
                                 "processes": len(pids)})
                 if prompts_at and elapsed >= prompts_at[0]:
@@ -125,11 +135,12 @@ def measure(command, dest, seconds=25.0, limit_mb=2800, every=0.5,
     report = {
         "schema": 1, "termination": reason, "process_exit_code": return_code,
         "peak_rss_mib": max((s["rss_mib"] for s in samples), default=0),
+        "peak_pss_mib": max((s["pss_mib"] for s in samples), default=0),
         "samples": samples, "screenshots": shots,
         "optional_dialog_responses": dismissals,
         "guest_execution_verified": False, "castle_rendering_verified": False,
         "rss_limit_is_not_switch_guest_ram": True,
-        "note": "VmRSS summed across subprocesses can double-count shared pages; virtual memory reservations are not RAM."
+        "note": "VmRSS sums can double-count shared pages; PSS distributes shared-page cost among processes, but may omit external GPU allocations. VmSize is virtual address space, not RAM."
     }
     (dest / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
