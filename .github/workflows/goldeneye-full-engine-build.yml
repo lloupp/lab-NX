@@ -24,7 +24,7 @@ jobs:
             devkitpro/devkita64:latest bash -ec '
               apt-get update -qq
               DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake ninja-build
-              pacman -Sy --noconfirm --needed switch-sdl2 switch-mesa switch-zlib
+              dkp-pacman -Sy --noconfirm --needed switch-sdl2 switch-mesa switch-zlib
               make -C nxlab/switch_engine_probe
               python3 scripts/build_goldeneye_native_engine.py --work-dir /tmp/ge-engine --jobs 2
               /opt/devkitpro/devkitA64/bin/aarch64-none-elf-readelf -h /tmp/ge-engine/build/ge007.aarch64
