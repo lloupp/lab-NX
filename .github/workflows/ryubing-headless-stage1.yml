@@ -59,6 +59,17 @@ jobs:
           set -e
           grep -Ei 'root-data-dir|graphics-backend|disable-ptc|input to load' \
             results/headless-help.log | head -30 || true
+      - name: Verify exact NRO file can be read inside Flatpak sandbox
+        run: |
+          set -euo pipefail
+          flatpak run \
+            --filesystem="$PWD/input":ro \
+            --filesystem="$PWD/ryu-headless" \
+            --command=sh io.github.ryubing.Ryujinx \
+            -c 'test -r "$1" && stat -c "%s bytes" "$1" && od -An -tx1 -j16 -N4 "$1"' \
+            sh "$PWD/input/castle_nx_bootstrap.nro" \
+            > results/sandbox-nro-file-readable.txt 2>&1
+          grep -q '4e 52 4f 30' results/sandbox-nro-file-readable.txt
       - name: Launch real ARM64 NRO directly using Ryubing headless
         run: |
           set -euo pipefail
