@@ -1,0 +1,197 @@
+Switch ARM64 full engine entry; target Dam; gameplay not confirmed
+[INFO ] GoldenEye 007 PC port starting (ntsc-final, unknown larkspur) -- https://github.com/jkdansereau/goldeneye-pc-port
+[INFO ] config: no data/ge007.ini yet; writing defaults
+[INFO ] config: wrote data/ge007.ini
+[INFO ] all-unlocked: Game.AllUnlocked=0 (levels flag 0, 007 flag 0)
+Switch map 10000000/30000000 size=10c0000 result=00000000
+[INFO ] romdataInit: ge007.ntsc-final.z64 (12582912 bytes) mapped at 0x10000000 (cart base), + model sidecars, + bg/stan sidecars
+[INFO ] pcmodels: 512 sidecars (1320288 bytes) at 0x10C00000
+[INFO ] pccg: 86 sidecars (3658154 bytes) at 0x10D42560
+[INFO ] romdataInit: D230 byte-swapped 1 RAW16 wavetable range(s) in place
+Switch map 70000000/60000000 size=800000 result=00000000
+[INFO ] SDL: auto window size 1224x918
+[NOTE ] SDL: created GL3.0 context
+[NOTE ] GL: using GLSL version 130
+[NOTE ] GL: shade affine (RDP), fog per-vertex
+[INFO ] video: defaults rev 1 (D546): 0 value(s) moved to 2.0x
+[INFO ] config: wrote data/ge007.ini
+[INFO ] video: renderer "NV120" (no match); not low-end, defaults kept
+[INFO ] config: wrote data/ge007.ini
+[INFO ] video: 0x0 window (native 640x480)
+[INFO ] audioInit: output device 0: "System audio output device"
+[INFO ] audioInit: opened SDL audio device at 22050 Hz (driver switch)
+[NOTE ] input: opened gamepad 0 'Switch Controller' as seat 0 (rumble no)
+[NOTE ] input: opened gamepad 1 'Switch Controller' as seat 1 (rumble no)
+[NOTE ] input: opened gamepad 2 'Switch Controller' as seat 2 (rumble no)
+[NOTE ] input: opened gamepad 3 'Switch Controller' as seat 3 (rumble no)
+[INFO ] config: wrote data/ge007.ini
+[INFO ] input: migrated binds to visible PC keyboard/mouse slots
+[INFO ] input: PC bindings, crouch mode toggle
+[INFO ] input: ready (mask=0xf, 4 controller(s), aimSpeed=16)
+[INFO ] ROM mapped at 0x10000000 (12582912 bytes); starting game
+Switch map 40000000/50000000 size=800000 result=00000000
+Switch map 40800000/50800000 size=800000 result=00000000
+Switch map 41000000/51000000 size=800000 result=00000000
+Switch map 41800000/51800000 size=800000 result=00000000
+Switch map 42000000/52000000 size=800000 result=00000000
+[ENGINE] entering debInit
+[NOTE ]  entering romCreateMesgQueue
+[ENGINE] entering tlbmanageEstablishManagementTable
+[ENGINE] entering image_entries_load
+[ENGINE] entering mempInit
+[ENGINE] entering memaInit
+0 from 0x802d7670 (rel 0x802d7670)
+[ENGINE] entering bgInit
+[ENGINE] entering viInit
+[ENGINE] entering viInitVideoSettings
+[ENGINE] entering indycommInit
+[ENGINE] entering obInit
+[INFO ] pcmodels: table patched (512 model entries)
+[INFO ] pccg: table patched (86 bg/stan entries)
+[ENGINE] entering rspInit
+[ENGINE] entering dynInit
+[ENGINE] entering joyInit
+[ENGINE] entering osCreateMesgQueue
+[ENGINE] entering osSetTimer
+[NOTE ] timer set: t=0x40ffffa0 start=100000us period=0us mq=0x40ffff78
+[ENGINE] entering osRecvMesg
+[NOTE ] first block on mq=0x40ffff78 from 0x802dda4c (rel 0x802dda4c)
+[NOTE ] timer fire: t=0x40ffffa0 mq=0x40ffff78
+[ENGINE] entering osSetTimer
+[NOTE ] timer set: t=0x40ffffa0 start=100000us period=0us mq=0x40ffff78
+[ENGINE] entering osRecvMesg
+[NOTE ] timer fire: t=0x40ffffa0 mq=0x40ffff78
+[ENGINE] entering joyCheckStatusThreadSafe
+[NOTE ] first block on mq=0x8f2a7a40 from 0x802db3a8 (rel 0x802db3a8)
+[NOTE ] first block on mq=0x8f2a7aa0 from 0x802db3cc (rel 0x802db3cc)
+[NOTE ] input: rescanned pads (mask=0xf, 4 controller(s))
+[INFO ] input: pad table rebuilt (presets 0/0/0/0, 0 unknown name(s))
+[ENGINE] entering osSetTimer
+[NOTE ] timer set: t=0x40ffffa0 start=100000us period=0us mq=0x40ffff78
+[ENGINE] entering osRecvMesg
+[NOTE ] timer fire: t=0x40ffffa0 mq=0x40ffff78
+[ENGINE] entering joyConsumeSamplesWrapper
+[ENGINE] entering osSetTimer
+[NOTE ] timer set: t=0x40ffffa0 start=100000us period=0us mq=0x40ffff78
+[ENGINE] entering osRecvMesg
+[NOTE ] timer fire: t=0x40ffffa0 mq=0x40ffff78
+[ENGINE] entering joyConsumeSamplesWrapper
+[ENGINE] entering stanInit
+[ENGINE] entering gameInit
+[ENGINE] entering sprintf
+[ENGINE] entering tokenSetString
+[ENGINE] entering mempCheckMemflagTokens
+[ENGINE] entering mempResetBank
+[ENGINE] entering langInit
+[ENGINE] entering lvInit
+[ENGINE] entering bossInit
+[ENGINE] entering textInit
+[ENGINE] entering debmenuInit
+[ENGINE] entering default_player_perspective_and_height
+[ENGINE] entering store_osgetcount
+[ENGINE] entering null_init_main_1
+[ENGINE] entering speedgraphInit
+[ENGINE] entering set_gu_scale
+[ENGINE] entering null_init_main_2
+[ENGINE] entering casingsInit
+[ENGINE] entering alloc_load_expand_ani_table
+[ENGINE] entering init_weapon_animation_groups_maybe
+[ENGINE] entering reset_counter_rand_body_head
+[ENGINE] entering null_init_main_3
+[ENGINE] entering init_player_gait_object
+[ENGINE] entering initGameData
+[ENGINE] entering fileResetRamRomSave
+[ENGINE] entering clear_ramrom_block_buffer_heading_ptrs
+[ENGINE] entering rspAllocateBuffers
+[ENGINE] entering musicSeqPlayerInit
+[ENGINE] entering music:mempAllocBytesInBank
+[ENGINE] entering music:alHeapInit
+[ENGINE] entering music:romdataAudioBankPcSize
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:romCopy
+[ENGINE] entering music:romdataFixupAudioBank
+[ENGINE] entering music:alBnkfNew
+[ENGINE] entering music:romdataAudioBankPcSize
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:romCopy
+[ENGINE] entering music:romdataFixupAudioBank
+[ENGINE] entering music:alBnkfNew
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:romCopy
+[ENGINE] entering music:romdataFixupMusicSeqTable
+[NOTE ] romdataFixupMusicSeqTable: partial decode, seqCount 63 > capacity 1 (full table follows)
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:romCopy
+[ENGINE] entering music:romdataFixupMusicSeqTable
+[ENGINE] entering music:musicSeqFileNew
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:amCreateAudioManager
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:alHeapAlloc
+[ENGINE] entering music:alCSPNew
+[ENGINE] entering music:alSeqpSetBank
+[ENGINE] entering music:alCSPNew
+[ENGINE] entering music:alSeqpSetBank
+[ENGINE] entering music:alCSPNew
+[ENGINE] entering music:alSeqpSetBank
+[ENGINE] entering music:sndNewPlayerInit
+[ENGINE] entering music:amStartAudioThread
+Switch map 42800000/52800000 size=800000 result=00000000
+[ENGINE] entering bossMainloop
+[ENGINE] entering stage:reset_mem_bank_5
+[NOTE ] first block on mq=0x8f2a6f10 from 0x802d8030 (rel 0x802d8030)
+[NOTE ] first block on mq=0x8f2a6f78 from 0x802d8110 (rel 0x802d8110)
+[INFO ] eeprom: no data/ge007.eep yet (fresh save)
+[NOTE ] D204: audio queue full (3008/2880 frames), dropped block #1
+[ENGINE] entering stage:fileSetCurrentFolder
+[ENGINE] entering stage:set_selected_difficulty
+[ENGINE] entering stage:set_solo_and_ptr_briefing
+[ENGINE] entering stage:randomSetSeed
+[ENGINE] entering stage:test_if_recording_demos_this_stage_load
+[ENGINE] entering stage:mempResetBank
+[ENGINE] entering stage:obBlankResourcesLoadedInBank
+[ENGINE] entering stage:memaReset
+[ENGINE] entering stage:reset_play_data_ptrs
+[ENGINE] entering stage:videoResetTextureCache
+[ENGINE] entering stage:init_player_data_ptrs_construct_viewports
+[ENGINE] entering stage:dynInitMemory
+[ENGINE] entering stage:joyCheckStatusThreadSafe
+[ENGINE] entering stage:lvlStageLoad
+[ENGINE] entering level:sndSetScalerApplyVolumeAllSfxSlot
+[ENGINE] entering level:musicTrack1ApplySeqpVol
+[ENGINE] entering level:musicTrack2ApplySeqpVol
+[ENGINE] entering level:musicTrack3ApplySeqpVol
+[ENGINE] entering level:sub_GAME_7F0C1364
+[ENGINE] entering level:modelmgrSetLevelResetting
+[ENGINE] entering level:set_mt_tex_alloc
+[ENGINE] entering level:bullet_sparks_reset_all
+[ENGINE] entering level:texReset
+[ENGINE] entering level:load_font_tables
+[ENGINE] entering level:something_with_stage_objectives
+[ENGINE] entering level:mpwatchUnpauseGame
+[ENGINE] entering level:sub_GAME_7F09B820
+[ENGINE] entering level:initModelHitEntryFreeList
+[ENGINE] entering level:modelmgrResetSlotCounts
+[ENGINE] entering level:init_load_objpos_table
+[ENGINE] entering level:reinit_between_menus
+[ENGINE] entering level:init_sound_effects_registers
+[ENGINE] entering level:init_guards
+[ENGINE] entering level:bodiesReset
+[ENGINE] entering level:proplvreset2
+[ENGINE] entering level:alloc_explosion_smoke_casing_scorch_impact_buffers
+[ENGINE] entering level:alloc_shattered_window_pieces
+[ENGINE] entering level:sub_GAME_7F007290
+[ENGINE] entering level:initCheatTextBuffer
+[ENGINE] entering level:modelmgrSetLevelResetting
+[ENGINE] entering level:zbufDeallocate
+[ENGINE] entering level:viSetVideoMode
+[ENGINE] entering level:lvlSetControlsLockedFlag
+[ENGINE] entering stage:viInitBuffers
+[ENGINE] entering stage:debmenuRefresh
+[ENGINE] entering stage:waitForNextFrame
+[NOTE ] first block on mq=0x8f2a5630 from 0x802de194 (rel 0x802de194)
+Switch map 43000000/53000000 size=800000 result=00000000
+[NOTE ] D481: render worker started
+[NOTE ] D416 split=0 players=1 stage=33

@@ -1,0 +1,195 @@
+name: GoldenEye native engine integration ARM64
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-native-engine-integration]
+    paths:
+      - 'nxlab/switch_deko_smoke/**'
+      - 'nxlab/native/goldeneye_fast3d_bridge.*'
+      - 'nxlab/native/goldeneye_n64_memory.*'
+      - 'nxlab/engine_adapter/**'
+      - 'scripts/build_goldeneye_deko_compat.py'
+      - 'scripts/check_deko_mme_upload.py'
+      - 'patches/**'
+      - 'tests/native/test_goldeneye_fast3d_bridge.c'
+      - 'tests/native/test_goldeneye_n64_memory.c'
+      - 'tests/native/test_goldeneye_gfx_subset.cpp'
+      - 'tests/native/test_eden_macro_cache.cpp'
+      - '.github/workflows/goldeneye-native-integration.yml'
+permissions:
+  contents: read
+jobs:
+  bridge-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute Fast3D bridge host tests
+        run: |
+          set -eux
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -I nxlab/native \
+            nxlab/native/goldeneye_fast3d_bridge.c \
+            tests/native/test_goldeneye_fast3d_bridge.c \
+            -lm -o /tmp/goldeneye_fast3d_bridge_test
+          /tmp/goldeneye_fast3d_bridge_test
+          echo "Fast3D contract subset tested; no real game display lists."
+      - name: Test translated N64 memory spans
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -I nxlab/native nxlab/native/goldeneye_n64_memory.c \
+            tests/native/test_goldeneye_n64_memory.c -o /tmp/ge-memory
+          /tmp/ge-memory
+      - name: Check real pinned upstream GfxRenderingAPI contract
+        run: |
+          git init -q upstream
+          git -C upstream remote add origin https://github.com/jkdansereau/goldeneye-pc-port.git
+          git -C upstream fetch --depth=1 origin fda76b69837e6c5aae436e0d3e798989e49b06d2
+          git -C upstream checkout --detach FETCH_HEAD
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined \
+            -I nxlab/native -c nxlab/native/goldeneye_fast3d_bridge.c -o /tmp/bridge.o
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined \
+            -I nxlab/native -I nxlab/engine_adapter -I upstream/port/fast3d \
+            nxlab/engine_adapter/goldeneye_gfx_subset.cpp upstream/port/fast3d/gfx_cc.cpp \
+            tests/native/test_goldeneye_gfx_subset.cpp /tmp/bridge.o -lm -o /tmp/ge-gfx
+          /tmp/ge-gfx
+      - name: Regress Eden macro-cache lifetime against its pinned dependency
+        run: |
+          git init -q unordered-dense
+          git -C unordered-dense remote add origin https://github.com/martinus/unordered_dense.git
+          git -C unordered-dense fetch --depth=1 origin 7b55cab8418da1603496462ce3ccdb4cb1dc3368
+          git -C unordered-dense checkout --detach FETCH_HEAD
+          c++ -std=c++20 -O1 -g -fsanitize=address,undefined -DGE_REPRODUCE_EDEN_UAF=1 \
+            -I unordered-dense/include tests/native/test_eden_macro_cache.cpp -o /tmp/eden-cache-old
+          if /tmp/eden-cache-old > /tmp/eden-cache-old.log 2>&1; then
+            echo 'Expected original Eden container-lifetime bug was not reproduced'; exit 1
+          fi
+          grep -q 'heap-use-after-free' /tmp/eden-cache-old.log
+          c++ -std=c++20 -O1 -g -fsanitize=address,undefined -I unordered-dense/include \
+            tests/native/test_eden_macro_cache.cpp -o /tmp/eden-cache
+          /tmp/eden-cache
+  dksh-and-nro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check original loader remains unchanged
+        run: |
+          test -s nxlab/switch_loader/source/main.c
+          test -s nxlab/switch_deko_smoke/source/main.c
+          test -s nxlab/native/goldeneye_fast3d_bridge.c
+          test ! -f nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
+      - name: Fetch pinned interface and compile the ordinary SDK baseline
+        run: |
+          git init -q upstream
+          git -C upstream remote add origin https://github.com/jkdansereau/goldeneye-pc-port.git
+          git -C upstream fetch --depth=1 origin fda76b69837e6c5aae436e0d3e798989e49b06d2
+          git -C upstream checkout --detach FETCH_HEAD
+          docker run --rm -v "$PWD:/work" -w /work/nxlab/switch_deko_smoke \
+            -e DEVKITPRO=/opt/devkitpro devkitpro/devkita64:latest make -j2
+      - name: Build independently uploaded MME entries and verify identical GPU RAM
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            -e DEVKITPRO=/opt/devkitpro \
+            devkitpro/devkita64:latest bash -ec '
+              apt-get update -qq
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq meson ninja-build flex bison
+              python3 scripts/build_goldeneye_deko_compat.py --work-dir /tmp/ge-mme --upstream /work/upstream
+            '
+      - name: Verify generated assets and executable type
+        run: |
+          set -eux
+          test -s nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
+          test -s nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
+          test -s nxlab/switch_deko_smoke/romfs/shaders/color_fsh.dksh
+          file nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf
+          file nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
+          readelf -h nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf | grep -E 'Machine:|Class:'
+          nm nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf | grep ge_fast3d_unpack_rgb
+          test -s nxlab/switch_deko_smoke/goldeneye-deko-mme.nro
+          nm nxlab/switch_deko_smoke/goldeneye-deko-mme.elf | grep ge_gfx_subset_api
+          nm nxlab/switch_deko_smoke/goldeneye-deko-mme.elf | grep ge_n64_memory_span
+          strings nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf |
+            grep -E 'first-deko-frame-submitted|dksh-loaded|swapchain-created'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-deko3d-real-arm64-nro-and-dksh
+          path: |
+            nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
+            nxlab/switch_deko_smoke/goldeneye-deko-mme.nro
+            nxlab/switch_deko_smoke/romfs/shaders/*.dksh
+          if-no-files-found: error
+
+  eden-vulkan:
+    needs: [bridge-contract, dksh-and-nro]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: goldeneye-deko3d-real-arm64-nro-and-dksh
+          path: nro-dist
+      - name: Install software Vulkan, virtual display, and capture tools
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            mesa-vulkan-drivers vulkan-tools xvfb xauth xdotool scrot \
+            libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0
+          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json vulkaninfo --summary
+          file nro-dist/goldeneye-deko-mme.nro
+      - name: Obtain official Eden 0.2.1 and extract its Linux AppImage
+        run: |
+          curl -fLsS --retry 3 --connect-timeout 20 --max-time 240 \
+            https://stable.eden-emu.dev/v0.2.1/Eden-Linux-v0.2.1-amd64-clang-pgo.AppImage \
+            -o Eden.AppImage
+          chmod +x Eden.AppImage
+          ./Eden.AppImage --appimage-extract > /tmp/eden-extract.log 2>&1
+          test -x squashfs-root/AppRun
+      - name: Execute actual Switch GPU commands under Eden and capture evidence
+        run: |
+          mkdir -p eden-evidence
+          export XDG_CONFIG_HOME="$PWD/eden-config" XDG_DATA_HOME="$PWD/eden-data"
+          mkdir -p "$XDG_CONFIG_HOME/eden" "$XDG_DATA_HOME"
+          export QT_QPA_PLATFORM=xcb
+          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+          export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
+          export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe SDL_AUDIODRIVER=dummy
+          timeout --signal=TERM --kill-after=4s 90s \
+            xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' bash -ec '
+              ./squashfs-root/AppRun -g "$PWD/nro-dist/goldeneye-deko-mme.nro" \
+                > eden-evidence/stdout.txt 2>&1 &
+              app=$!
+              sleep 7
+              xdotool mousemove 755 335 click 1 || true
+              sleep 17
+              scrot -o eden-evidence/after24s.png || true
+              sleep 16
+              scrot -o eden-evidence/after40s.png || true
+              kill "$app" 2>/dev/null || true
+              wait "$app" || true
+            ' || echo "Eden exited or timed out; preserving evidence"
+          find "$XDG_DATA_HOME/eden" -maxdepth 6 -name 'deko_boot_trace.txt' -print \
+             -exec cp {} eden-evidence/guest_deko_trace.txt \; || true
+          cp "$XDG_DATA_HOME/eden/log/eden_log.txt" eden-evidence/eden_log.txt || true
+          echo "---- In-guest trace ----"
+          cat eden-evidence/guest_deko_trace.txt 2>/dev/null || true
+          echo "---- Eden relevant events ----"
+          grep -Ei 'deko|gpu|vulkan|booting game|error|fatal' \
+            eden-evidence/eden_log.txt | tail -70 || true
+          echo 'No game ROM in CI. A visible triangle would prove GPU diagnostic only.'
+          # Boot and shader loading are NOT equivalent to a successfully
+          # submitted GPU frame. This job must fail until deko3d actually
+          # presents graphics in Eden. Evidence is uploaded even on failure.
+          if ! grep -qx 'first-deko-frame-submitted' eden-evidence/guest_deko_trace.txt 2>/dev/null; then
+            echo '::error::Guest never submitted a deko3d framebuffer in Eden'
+            exit 1
+          fi
+          grep -qx 'n64-translated-arena-alias-verified' eden-evidence/guest_deko_trace.txt
+          grep -qx 'gfx-rendering-api-subset-vbo-ready' eden-evidence/guest_deko_trace.txt
+          echo 'Submission markers prove diagnostic execution; inspect captured pixels separately.'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: goldeneye-deko3d-eden-actual-execution
+          path: eden-evidence/
+          if-no-files-found: warn

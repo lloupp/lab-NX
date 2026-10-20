@@ -1,0 +1,1 @@
+Actual portal scanner: 3 level cases pass; old symbol-adjacency boundary reproduces ASan overflow.

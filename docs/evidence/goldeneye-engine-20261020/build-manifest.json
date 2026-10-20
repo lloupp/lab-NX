@@ -1,0 +1,10 @@
+{
+  "upstream_commit": "fda76b69837e6c5aae436e0d3e798989e49b06d2",
+  "sha256": "6120987c40c461c90319ac0a4cceba258ccc6143d5d6965b769100af7f85f8a6",
+  "nro_bytes": 8237112,
+  "architecture": "AArch64",
+  "rom_bundled": false,
+  "renderer": "Fast3D/Mesa/nouveau",
+  "gameplay_verified": false,
+  "compiler": "aarch64-none-elf-gcc (devkitA64) 16.1.0"
+}

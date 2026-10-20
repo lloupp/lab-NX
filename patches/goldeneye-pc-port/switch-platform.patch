@@ -1,0 +1,1165 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3da7380..73d7df0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -47,6 +47,10 @@ endif()
+ # ASM is needed for the generated absolute ROM asset symbols
+ # (port/src/romassets_<region>.s, see scripts/gen_romassets.py).
+ project(ge007 C CXX ASM)
++if(GE_SWITCH)
++  add_compile_definitions(PORT_DRAM_K0_BASE=0x60000000UL)
++  add_compile_options($<$<COMPILE_LANGUAGE:C>:-Dstrtol=geN64Strtol>)
++endif()
+ 
+ include(TargetArch)
+ include(FindPkgConfig)
+@@ -93,7 +97,9 @@ else()
+ endif()
+ message(STATUS "Target arch: ${TARGET_ARCH} (64bit=${TARGET_IS_64BIT})")
+ 
+-if(WIN32)
++if(GE_SWITCH)
++  set(TARGET_OS "switch")
++elseif(WIN32)
+   set(TARGET_OS "windows")
+ elseif(APPLE)
+   set(TARGET_OS "osx")
+@@ -164,7 +170,11 @@ configure_file(
+ # the toolchain include dir from the compiler location (MinGW/MSYS2 layout:
+ # bin/../include) and generate an absolute-path include.
+ get_filename_component(_PORT_GCC_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
+-get_filename_component(PORT_HOST_STRING_H "${_PORT_GCC_DIR}/../include/string.h" ABSOLUTE)
++set(_PORT_HOST_INCLUDE "${_PORT_GCC_DIR}/../include")
++if(GE_SWITCH)
++  set(_PORT_HOST_INCLUDE "${_PORT_GCC_DIR}/../aarch64-none-elf/include")
++endif()
++get_filename_component(PORT_HOST_STRING_H "${_PORT_HOST_INCLUDE}/string.h" ABSOLUTE)
+ configure_file(
+   "${CMAKE_SOURCE_DIR}/port/include/hoststring.h.in"
+   "${CMAKE_BINARY_DIR}/port/include/hoststring.h" @ONLY)
+@@ -173,7 +183,7 @@ configure_file(
+ # the include path and shadows the system header; libstdc++'s <thread>/gthr
+ # headers in the fast3d C++ TUs need the real <sched.h> (cpu_set_t,
+ # sched_yield). Both MinGW and Linux keep <sched.h> at bin/../include.
+-get_filename_component(PORT_HOST_SCHED_H "${_PORT_GCC_DIR}/../include/sched.h" ABSOLUTE)
++get_filename_component(PORT_HOST_SCHED_H "${_PORT_HOST_INCLUDE}/sched.h" ABSOLUTE)
+ configure_file(
+   "${CMAKE_SOURCE_DIR}/port/include/hostsched.h.in"
+   "${CMAKE_BINARY_DIR}/port/include/hostsched.h" @ONLY)
+@@ -183,7 +193,7 @@ configure_file(
+ # one C++ TU (fast3d): MinGW's own sec_api/stdlib_s.h does `#include
+ # <stdlib.h>`, which resolves to the N64 header via -I. The shim routes C++
+ # TUs to the host header by absolute path (same trick as hoststring.h).
+-get_filename_component(PORT_HOST_STDLIB_H "${_PORT_GCC_DIR}/../include/stdlib.h" ABSOLUTE)
++get_filename_component(PORT_HOST_STDLIB_H "${_PORT_HOST_INCLUDE}/stdlib.h" ABSOLUTE)
+ configure_file(
+   "${CMAKE_SOURCE_DIR}/port/include/hoststdlib.h.in"
+   "${CMAKE_BINARY_DIR}/port/include/hoststdlib.h" @ONLY)
+@@ -199,7 +209,7 @@ execute_process(
+ if(_PORT_GCC_STDDEF AND EXISTS "${_PORT_GCC_STDDEF}")
+   get_filename_component(PORT_HOST_STDDDEF_H "${_PORT_GCC_STDDEF}" ABSOLUTE)
+ else()
+-  get_filename_component(PORT_HOST_STDDDEF_H "${_PORT_GCC_DIR}/../include/stddef.h" ABSOLUTE)
++  get_filename_component(PORT_HOST_STDDDEF_H "${_PORT_HOST_INCLUDE}/stddef.h" ABSOLUTE)
+ endif()
+ configure_file(
+   "${CMAKE_SOURCE_DIR}/port/include/hoststddef.h.in"
+@@ -370,7 +380,7 @@ list(APPEND LIBS "${ZLIB_LIBRARY}")
+ # mingw-w64-x86_64-zlib installs zlib.h.
+ set(PORT_REAL_ZLIB_H "${ZLIB_INCLUDE_DIR}/zlib.h")
+ if(NOT EXISTS "${PORT_REAL_ZLIB_H}")
+-  set(PORT_REAL_ZLIB_H "${_PORT_GCC_DIR}/../include/zlib.h")
++  set(PORT_REAL_ZLIB_H "${_PORT_HOST_INCLUDE}/zlib.h")
+ endif()
+ if(NOT EXISTS "${PORT_REAL_ZLIB_H}")
+   message(FATAL_ERROR "Cannot locate the host zlib.h needed by port/src/rzdecomp.c")
+diff --git a/assets/animationtable_data.h b/assets/animationtable_data.h
+index 45a6c3d..ecb0aef 100644
+--- a/assets/animationtable_data.h
++++ b/assets/animationtable_data.h
+@@ -197,7 +197,7 @@
+ // These are compile time extern constants (so not "really" const), but used the same
+ // as the defines above, which is to index into ptr_animation_table.
+ 
+-#if defined(__x86_64__)
++#if defined(__x86_64__) || defined(__aarch64__)
+ /* D34 (docs/dev/findings.md): on N64 this segment links at VMA 0
+  * (ge007.ld), so &ANIM_DATA_x is the record's offset within the
+  * animation_data segment and game code re-bases it with
+diff --git a/port/include/pc_protos.h b/port/include/pc_protos.h
+index 75d7f83..aadb544 100644
+--- a/port/include/pc_protos.h
++++ b/port/include/pc_protos.h
+@@ -31,7 +31,7 @@
+ #ifndef _PC_PROTOS_H_
+ #define _PC_PROTOS_H_
+ 
+-#if defined(PORT) && defined(__x86_64__) && !defined(__cplusplus)
++#if defined(PORT) && (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__))) && !defined(__cplusplus)
+ 
+ #include <PR/ultratypes.h> /* u8..s32, f32, size_t (host on PC) */
+ #include <PR/gbi.h>        /* Gfx, Mtx, Vtx, Light (shimmed on PC) */
+diff --git a/port/include/platform.h b/port/include/platform.h
+index 3a4c6c0..d4410ce 100644
+--- a/port/include/platform.h
++++ b/port/include/platform.h
+@@ -12,7 +12,9 @@
+ #include <stdint.h>
+ #include <stddef.h>
+ 
+-#if defined(_WIN32) || defined(_WIN64)
++#if defined(__SWITCH__)
++  #define PLATFORM_SWITCH 1
++#elif defined(_WIN32) || defined(_WIN64)
+   #define PLATFORM_WINDOWS 1
+ #elif defined(__APPLE__)
+   #include <TargetConditionals.h>
+diff --git a/port/shim/sched.h b/port/shim/sched.h
+index 256c003..18a658d 100644
+--- a/port/shim/sched.h
++++ b/port/shim/sched.h
+@@ -11,7 +11,7 @@
+  *
+  * Inert in the N64 build (port/shim is not on its include path).
+  */
+-#if defined(__cplusplus)
++#if defined(__cplusplus) || defined(GE_SWITCH_PLATFORM_TU)
+ #include "hostsched.h"
+ #else
+ #include_next <sched.h>
+diff --git a/port/shim/stddef.h b/port/shim/stddef.h
+index c36a036..f5489bf 100644
+--- a/port/shim/stddef.h
++++ b/port/shim/stddef.h
+@@ -1,3 +1,6 @@
++#ifdef __SWITCH__
++typedef __WINT_TYPE__ wint_t;
++#endif
+ /*
+  * PC port shim for <stddef.h>.
+  *
+@@ -45,6 +48,9 @@
+  */
+ #ifndef _PORT_SHIM_STDDEF_TYPES
+ #define _PORT_SHIM_STDDEF_TYPES
++#ifdef __SWITCH__
++typedef __WINT_TYPE__ wint_t;
++#endif
+ typedef __SIZE_TYPE__    size_t;
+ typedef __PTRDIFF_TYPE__ ptrdiff_t;
+ /* SDL's headers (SDL_stdinc.h, SDL_hidapi.h) and glibc's <bits/wchar2.h>
+diff --git a/port/src/crash.c b/port/src/crash.c
+index 642313a..cb22b08 100644
+--- a/port/src/crash.c
++++ b/port/src/crash.c
+@@ -579,3 +579,7 @@ void crashShutdown(void)
+ #endif
+     g_CrashEnabled = 0;
+ }
++
++#ifdef PLATFORM_SWITCH
++void crashDumpThreads(const unsigned long *tids, const char **names, int count) { (void)tids; (void)names; (void)count; extern void geEngineDumpRegisters(void); geEngineDumpRegisters(); }
++#endif
+diff --git a/port/src/dram.c b/port/src/dram.c
+index cdadb88..4175619 100644
+--- a/port/src/dram.c
++++ b/port/src/dram.c
+@@ -1,3 +1,9 @@
++#ifdef __SWITCH__
++/* Switch platform implementation: game logic is unchanged. */
++extern void *geEngineReserveDram(void);
++void *dramReserve(void) { return geEngineReserveDram(); }
++
++#else
+ /*
+  * dram.c — a slice of N64 "DRAM" in host memory, mapped twice.
+  *
+@@ -134,3 +140,5 @@ void *dramReserve(void)
+     return v1;
+ #endif
+ }
++
++#endif
+diff --git a/port/src/libultra.c b/port/src/libultra.c
+index 4e9869c..d6e82cc 100644
+--- a/port/src/libultra.c
++++ b/port/src/libultra.c
+@@ -23,6 +23,10 @@
+  * src/sched.h (it is on the include path), not MinGW's. osYieldThread uses a
+  * short sleep instead of sched_yield(). */
+ #include <pthread.h>
++#ifdef __SWITCH__
++extern int geEnginePthreadCreate(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
++#define pthread_create geEnginePthreadCreate
++#endif
+ #include <stdlib.h>
+ #include <string.h>
+ #include <stdint.h>
+@@ -421,7 +425,9 @@ void osCreateThread(OSThread *t, OSId id, void (*entry)(void *), void *arg,
+ }
+ 
+ #if !defined(_WIN32)
++#ifndef __SWITCH__
+ #include <sys/mman.h>
++#endif
+ /* The decomp aligns/compares stack-buffer pointers by truncating to u32
+  * (e.g. `(u32)compbuffer` in image.c texLoad) — an N64 assumption. glibc
+  * puts pthread stacks above 4 GiB, so those truncations corrupt. Force each
+@@ -429,6 +435,10 @@ void osCreateThread(OSThread *t, OSId id, void (*entry)(void *), void *arg,
+  * works exactly as on the console. Windows pthread stacks are already low. */
+ static void *portAllocLowStack(size_t sz)
+ {
++#ifdef __SWITCH__
++    (void)sz;
++    return NULL; /* libnx may only map Normal heap pages as pthread stacks. */
++#endif
+ #if defined(MAP_32BIT)
+     void *p = mmap(NULL, sz, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT
+diff --git a/port/src/main.c b/port/src/main.c
+index 46d3636..c71bf17 100644
+--- a/port/src/main.c
++++ b/port/src/main.c
+@@ -125,6 +125,12 @@ void portAllUnlockedApply(void)
+ 
+ int main(int argc, char **argv)
+ {
++    #ifdef __SWITCH__
++    extern void geEngineBoot(void);
++    geEngineBoot();
++    char *switch_argv[] = { "goldeneye-native-engine", "-level_33", NULL };
++    argc = 2; argv = switch_argv;
++    #endif
+     sysSetArgs(argc, argv);
+ 
+     if (sysArgCheck("--version")) { portPrintVersion(); return 0; }
+diff --git a/port/src/romconvert.c b/port/src/romconvert.c
+index 16ec955..aae6b9e 100644
+--- a/port/src/romconvert.c
++++ b/port/src/romconvert.c
+@@ -156,6 +156,9 @@ static int rcRunConverter(const char *exePath, const char *rom, const char *out)
+     free(wcmd);
+     return rc;
+ }
++#elif defined(__SWITCH__)
++static int rcRunConverter(const char *exePath, const char *rom, const char *out)
++{ (void)exePath; (void)rom; (void)out; return -1; }
+ #else
+ static int rcRunConverter(const char *exePath, const char *rom, const char *out)
+ {
+diff --git a/port/src/romdata.c b/port/src/romdata.c
+index 4d61a3d..c1ea7ff 100644
+--- a/port/src/romdata.c
++++ b/port/src/romdata.c
+@@ -32,6 +32,9 @@ extern int snprintf(char *str, size_t maxsize, const char *format, ...);
+     #define WIN32_LEAN_AND_MEAN
+   #endif
+   #include <windows.h>
++#elif defined(PLATFORM_SWITCH)
++extern void *geEngineMapCart(unsigned long size);
++extern void geEngineUnmapCart(void);
+ #else
+   /* POSIX: mmap the ROM at the fixed cart address (mirrors the VirtualAlloc
+    * path). <sys/mman.h> is a host header the decomp include path does not
+@@ -407,6 +410,12 @@ int romdataInit(void)
+                 free(img);
+                 return -1;
+             }
++#elif defined(PLATFORM_SWITCH)
++            if (geEngineMapCart(maplen)) {
++                mappedLen = maplen;
++                return romdataFinishCartMap(tok, img, sideTotal, cgTotal);
++            }
++            sysFatalError("Switch cart mapping failed");
+ #else
+             /* POSIX: anonymous fixed-address mmap. MAP_FIXED_NOREPLACE (Linux
+              * 4.17+) fails instead of clobbering an existing mapping; where it
+@@ -444,8 +453,12 @@ void romdataDestroy(void)
+     if (mappedAtCartBase) {
+ #if defined(PLATFORM_WINDOWS)
+         VirtualFree((LPVOID)CART_BASE, 0, MEM_RELEASE);
++#else
++        #ifdef PLATFORM_SWITCH
++        geEngineUnmapCart();
+ #else
+         munmap((void *)(uintptr_t)CART_BASE, (size_t)mappedLen);
++#endif
+         mappedLen = 0;
+ #endif
+         mappedAtCartBase = 0;
+diff --git a/port/src/system.c b/port/src/system.c
+index 48e73c9..88c7ddf 100644
+--- a/port/src/system.c
++++ b/port/src/system.c
+@@ -148,6 +148,8 @@ int sysRelaunchSelf(void)
+     CloseHandle(pi.hThread);
+     CloseHandle(pi.hProcess);
+     return 0;
++#elif defined(PLATFORM_SWITCH)
++    return -1; /* Restart requires a new homebrew launch. */
+ #else
+     if (!g_argv || g_argc <= 0) return -1;
+     char exe[4096];
+diff --git a/port/src/updatecheck.c b/port/src/updatecheck.c
+index 046a370..a54b306 100644
+--- a/port/src/updatecheck.c
++++ b/port/src/updatecheck.c
+@@ -169,6 +169,9 @@ static int fetchLatest(char *buf, size_t cap)
+     FreeLibrary(dll);
+     buf[len] = 0;
+     return ok;
++#elif defined(PLATFORM_SWITCH)
++    buf[0] = 0;
++    return 0; /* No subprocess/network update service on Switch. */
+ #else
+     FILE *f = popen("curl -q -fsS --proto =https --max-time 5 -A '" UC_UA "' '" UC_URL "' 2>/dev/null", "r");
+     if (!f) return 0;
+diff --git a/src/audi.c b/src/audi.c
+index da660aa..c1ddb70 100644
+--- a/src/audi.c
++++ b/src/audi.c
+@@ -7,7 +7,7 @@
+ #include "speed_graph.h"
+ #if defined(PORT)
+ #include <string.h> /* PC port: memcpy for the CUSTOM_FX_PARAMS_N copy in audioInit (docs/dev/findings.md §11) */
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ #include <stdio.h>
+ #include <stdlib.h>
+ #ifdef PORT
+@@ -666,7 +666,7 @@ s32 amDmaCallback(s32 addr, s32 len, void* state)
+             /* mark it used */
+             dmaPtr->lastFrame = (s32) g_AudioFrameCount;
+             freeBuffer = (dmaPtr->ptr + addr) - dmaPtr->startAddr;
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+             if (GE_ENVFLAG("GE_MIXERTRACE")) {
+                 static FILE *dtf2 = NULL;
+                 if (!dtf2) { dtf2 = fopen("mixertrace.log", "a"); if (dtf2) setvbuf(dtf2, NULL, _IONBF, 0); }
+@@ -734,7 +734,7 @@ s32 amDmaCallback(s32 addr, s32 len, void* state)
+     dmaPtr->lastFrame = g_AudioFrameCount;
+ 
+     osPiStartDma(&g_DmaIOMessageBuffer[g_NextDMa++], OS_MESG_PRI_HIGH, OS_READ, (u32)addr, freeBuffer, AUDIO_DMA_MAX_BUFFER_LENGTH, &g_DmaMessageQueue);
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+     if (GE_ENVFLAG("GE_MIXERTRACE")) {
+         static FILE *dtf3 = NULL;
+         if (!dtf3) { dtf3 = fopen("mixertrace.log", "a"); if (dtf3) setvbuf(dtf3, NULL, _IONBF, 0); }
+diff --git a/src/boss.c b/src/boss.c
+index cb766ee..e1b16bb 100644
+--- a/src/boss.c
++++ b/src/boss.c
+@@ -1,3 +1,9 @@
++#ifdef __SWITCH__
++extern void geEngineCheckpoint(const char *name);
++#define GE_SWITCH_CHECKPOINT(name) geEngineCheckpoint(name)
++#else
++#define GE_SWITCH_CHECKPOINT(name) ((void)0)
++#endif
+ #include <os_extension.h>
+ #include <PR/os.h>
+ #ifdef PORT
+@@ -169,33 +175,52 @@ void bossInitMainthreadData(void)
+     u32 unused;
+     s32 i;
+ 
++    GE_SWITCH_CHECKPOINT("debInit");
+     debInit();
++    GE_SWITCH_CHECKPOINT("romCreateMesgQueue");
+     romCreateMesgQueue();
++    GE_SWITCH_CHECKPOINT("tlbmanageEstablishManagementTable");
+     tlbmanageEstablishManagementTable();
++    GE_SWITCH_CHECKPOINT("image_entries_load");
+     image_entries_load();
++    GE_SWITCH_CHECKPOINT("mempInit");
+     mempInit();
++    GE_SWITCH_CHECKPOINT("memaInit");
+     memaInit();
++    GE_SWITCH_CHECKPOINT("bgInit");
+     bgInit();
++    GE_SWITCH_CHECKPOINT("viInit");
+     viInit();
++    GE_SWITCH_CHECKPOINT("viInitVideoSettings");
+     viInitVideoSettings();
++    GE_SWITCH_CHECKPOINT("indycommInit");
+     indycommInit();
+     g_DebugAndUpdateStageFlag = rmonGetToken();
++    GE_SWITCH_CHECKPOINT("obInit");
+     obInit();
++    GE_SWITCH_CHECKPOINT("rspInit");
+     rspInit();
++    GE_SWITCH_CHECKPOINT("dynInit");
+     dynInit();
++    GE_SWITCH_CHECKPOINT("joyInit");
+     joyInit();
++    GE_SWITCH_CHECKPOINT("osCreateMesgQueue");
+     osCreateMesgQueue(&bossmq, &bossmsg, 1);
+ 
+     for (i = 0; i != MAXCONTROLLERS; i++)
+     {
++        GE_SWITCH_CHECKPOINT("osSetTimer");
+         osSetTimer(&bosstimer, OS_USEC_TO_CYCLES(100000), 0, &bossmq, &bossmsg);
++        GE_SWITCH_CHECKPOINT("osRecvMesg");
+         osRecvMesg(&bossmq, &bossmsg, OS_MESG_BLOCK);
+         if (i == 1)
+         {
++            GE_SWITCH_CHECKPOINT("joyCheckStatusThreadSafe");
+             joyCheckStatusThreadSafe();
+         }
+         else if (i >= 2)
+         {
++            GE_SWITCH_CHECKPOINT("joyConsumeSamplesWrapper");
+             joyConsumeSamplesWrapper();
+         }
+     }
+@@ -205,11 +230,14 @@ void bossInitMainthreadData(void)
+         g_DebugAndUpdateStageFlag = 1;
+     }
+ 
++    GE_SWITCH_CHECKPOINT("stanInit");
+     stanInit();
++    GE_SWITCH_CHECKPOINT("gameInit");
+     gameInit();
+ 
+     if (g_DebugAndUpdateStageFlag != 0)
+     {
++        GE_SWITCH_CHECKPOINT("tokenSetString");
+         tokenSetString("          -ml0 -me0 -mgfx100 -mvtx50 -mt700 -ma400");
+     }
+ #ifdef PORT
+@@ -239,16 +267,19 @@ void bossInitMainthreadData(void)
+ 
+                 if (hard != NULL && hard[0] != '\0')
+                 {
++                    GE_SWITCH_CHECKPOINT("sprintf");
+                     sprintf(portTokenBuf, "-level_%c%c -hard%c %s",
+                             lvl[0], lvl[1], hard[0],
+                             memallocstringtable[k].string);
+                 }
+                 else
+                 {
++                    GE_SWITCH_CHECKPOINT("sprintf");
+                     sprintf(portTokenBuf, "-level_%c%c %s",
+                             lvl[0], lvl[1], memallocstringtable[k].string);
+                 }
+ 
++                GE_SWITCH_CHECKPOINT("tokenSetString");
+                 tokenSetString(portTokenBuf);
+                 break;
+             }
+@@ -262,27 +293,49 @@ void bossInitMainthreadData(void)
+     }
+ 
+     start = (PHYS_TO_K0(osVirtualToPhysical(&_bssSegmentEnd)));
++    GE_SWITCH_CHECKPOINT("mempCheckMemflagTokens");
+     mempCheckMemflagTokens(start, ((u32)tlbmanageGetTlbAllocatedBlock() - (u32)start));
++    GE_SWITCH_CHECKPOINT("mempResetBank");
+     mempResetBank(MEMPOOL_PERMANENT);
++    GE_SWITCH_CHECKPOINT("langInit");
+     langInit();
++    GE_SWITCH_CHECKPOINT("lvInit");
+     lvInit();
++    GE_SWITCH_CHECKPOINT("bossInit");
+     bossInit();
++    GE_SWITCH_CHECKPOINT("textInit");
+     textInit();
++    GE_SWITCH_CHECKPOINT("debmenuInit");
+     debmenuInit();
++    GE_SWITCH_CHECKPOINT("default_player_perspective_and_height");
+     default_player_perspective_and_height();
++    GE_SWITCH_CHECKPOINT("store_osgetcount");
+     store_osgetcount();
++    GE_SWITCH_CHECKPOINT("null_init_main_1");
+     null_init_main_1();
++    GE_SWITCH_CHECKPOINT("speedgraphInit");
+     speedgraphInit();
++    GE_SWITCH_CHECKPOINT("set_gu_scale");
+     set_gu_scale();
++    GE_SWITCH_CHECKPOINT("null_init_main_2");
+     null_init_main_2();
++    GE_SWITCH_CHECKPOINT("casingsInit");
+     casingsInit();
++    GE_SWITCH_CHECKPOINT("alloc_load_expand_ani_table");
+     alloc_load_expand_ani_table();
++    GE_SWITCH_CHECKPOINT("init_weapon_animation_groups_maybe");
+     init_weapon_animation_groups_maybe();
++    GE_SWITCH_CHECKPOINT("reset_counter_rand_body_head");
+     reset_counter_rand_body_head();
++    GE_SWITCH_CHECKPOINT("null_init_main_3");
+     null_init_main_3();
++    GE_SWITCH_CHECKPOINT("init_player_gait_object");
+     init_player_gait_object();
++    GE_SWITCH_CHECKPOINT("initGameData");
+     initGameData();
++    GE_SWITCH_CHECKPOINT("fileResetRamRomSave");
+     fileResetRamRomSave();
++    GE_SWITCH_CHECKPOINT("clear_ramrom_block_buffer_heading_ptrs");
+     clear_ramrom_block_buffer_heading_ptrs();
+ }
+ 
+@@ -309,8 +362,11 @@ void bossMemBarsFlagToggle(void) {
+  */
+ void bossEntry(void) {
+     bossInitMainthreadData();
++    GE_SWITCH_CHECKPOINT("rspAllocateBuffers");
+     rspAllocateBuffers();
++    GE_SWITCH_CHECKPOINT("musicSeqPlayerInit");
+     musicSeqPlayerInit();
++    GE_SWITCH_CHECKPOINT("bossMainloop");
+     while(1){
+        bossMainloop();
+     }
+@@ -375,6 +431,7 @@ void bossMainloop(void)
+     // end declarations
+ 
+     done = 0;
++    GE_SWITCH_CHECKPOINT("stage:reset_mem_bank_5");
+     reset_mem_bank_5();
+ 
+     if (tokenFind(1, "-level_") != NULL)
+@@ -388,20 +445,26 @@ void bossMainloop(void)
+ 
+     if (g_StageNum != LEVELID_TITLE)
+     {
++        GE_SWITCH_CHECKPOINT("stage:fileValidateSaves");
+         fileValidateSaves();
++        GE_SWITCH_CHECKPOINT("stage:fileSetCurrentFolder");
+         fileSetCurrentFolder(FOLDER1);
++        GE_SWITCH_CHECKPOINT("stage:set_selected_difficulty");
+         set_selected_difficulty(DIFFICULTY_AGENT);
++        GE_SWITCH_CHECKPOINT("stage:set_solo_and_ptr_briefing");
+         set_solo_and_ptr_briefing(g_StageNum);
+ 
+         if (tokenFind(1, "-hard"))
+         {
+             // convert ASCII difficulty value to int in set difficulty calls eg '1' = 49, 49-48 = 1
++            GE_SWITCH_CHECKPOINT("stage:set_selected_difficulty");
+             set_selected_difficulty(*(const unsigned char*)tokenFind(1, "-hard") - '0');
+             lvlSetSelectedDifficulty(*(const unsigned char*)tokenFind(1, "-hard") - '0');
+         }
+     }
+ 
+     nowCount = osGetCount();
++    GE_SWITCH_CHECKPOINT("stage:randomSetSeed");
+     randomSetSeed(nowCount);
+ 
+     // 'done' value never changes, and control never breaks -- infinite loop
+@@ -412,6 +475,7 @@ void bossMainloop(void)
+         toggleFlag = 0;
+         pendingGfx = 0;
+ 
++        GE_SWITCH_CHECKPOINT("stage:test_if_recording_demos_this_stage_load");
+         test_if_recording_demos_this_stage_load(g_StageNum, lvlGetSelectedDifficulty());
+         if (g_DebugAndUpdateStageFlag)
+         {
+@@ -460,7 +524,9 @@ void bossMainloop(void)
+             tokenSetString(memallocstringtable[stringIndex].string);
+         }
+ 
++        GE_SWITCH_CHECKPOINT("stage:mempResetBank");
+         mempResetBank(MEMPOOL_STAGE);
++        GE_SWITCH_CHECKPOINT("stage:obBlankResourcesLoadedInBank");
+         obBlankResourcesLoadedInBank(MEMPOOL_STAGE);
+         if (tokenFind(1, "-ma"))
+         {
+@@ -494,7 +560,9 @@ void bossMainloop(void)
+ #ifdef PORT
+         if (getenv("GE_D294")) { osSyncPrintf("D294 stage=%d ma=%d\n", (s32)g_StageNum, (s32)g_CurentMaMallocValue); }
+ #endif
++        GE_SWITCH_CHECKPOINT("stage:memaReset");
+         memaReset(mempAllocBytesInBank(g_CurentMaMallocValue, MEMPOOL_STAGE), g_CurentMaMallocValue);
++        GE_SWITCH_CHECKPOINT("stage:reset_play_data_ptrs");
+         reset_play_data_ptrs();
+ #ifdef PORT
+         /* D235 (wrong textures after dying/restarting a level): the port-side
+@@ -521,6 +589,7 @@ void bossMainloop(void)
+             if (ge_d235)
+                 osSyncPrintf("D235: stage=%d texcache entries purged at load=%d\n",
+                              (s32)g_StageNum, gfx_texture_cache_count());
++            GE_SWITCH_CHECKPOINT("stage:videoResetTextureCache");
+             videoResetTextureCache();
+         }
+ #endif
+@@ -535,12 +604,19 @@ void bossMainloop(void)
+             }
+         }
+ 
++        GE_SWITCH_CHECKPOINT("stage:init_player_data_ptrs_construct_viewports");
+         init_player_data_ptrs_construct_viewports(localSelectedNumPlayers);
++        GE_SWITCH_CHECKPOINT("stage:dynInitMemory");
+         dynInitMemory();
++        GE_SWITCH_CHECKPOINT("stage:joyCheckStatusThreadSafe");
+         joyCheckStatusThreadSafe();
++        GE_SWITCH_CHECKPOINT("stage:lvlStageLoad");
+         lvlStageLoad(g_StageNum);
++        GE_SWITCH_CHECKPOINT("stage:viInitBuffers");
+         viInitBuffers();
++        GE_SWITCH_CHECKPOINT("stage:debmenuRefresh");
+         debmenuRefresh();
++        GE_SWITCH_CHECKPOINT("stage:waitForNextFrame");
+         waitForNextFrame();
+         speedgraphMarkerCommit();
+ 
+diff --git a/src/game/bg.c b/src/game/bg.c
+index cfde7b3..466f282 100644
+--- a/src/game/bg.c
++++ b/src/game/bg.c
+@@ -1,3 +1,8 @@
++#ifdef PORT
++#include "portaddr.h"
++#else
++#define PORT_DRAM_K0_BASE 0x80000000U
++#endif
+ #include <ultra64.h>
+ #include <PR/os.h>
+ #include <PR/gbi.h>
+@@ -343,7 +348,13 @@ void sub_GAME_7F0B37EC(void) {
+     u32 masked;
+ 
+     ptr = (u8 *)specialportalarray;
++#ifdef PORT
++    /* Host linkers do not preserve adjacency to the next N64 data symbol.
++     * The table's actual byte extent is the same on every host ABI. */
++    end = specialportalarray + sizeof specialportalarray;
++#else
+     end = (u8 *)&g_BgCurrentRoom;
++#endif
+ 
+     do {
+         if (levelentry_index == *ptr++) {
+@@ -376,7 +387,11 @@ void sub_GAME_7F0B37EC(void) {
+         }
+ 
+         ptr++;
++#ifdef PORT
++    } while (ptr < end);
++#else
+     } while ((u32)ptr < (u32)end);
++#endif
+ }
+ 
+ 
+@@ -3536,7 +3551,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
+                             texnum = lightFixtureTexnumForGfx(gdl, roomnum);
+ #else
+                             temp.word = ((u32 *) tcmd)[1] - 8;
+-                            texnum = *((u16 *) (temp.word | 0x80000000));
++                            texnum = *((u16 *) (temp.word | PORT_DRAM_K0_BASE));
+ #endif
+                         }
+ 
+@@ -3718,7 +3733,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
+                                     texnum = lightFixtureTexnumForGfx(gdl, roomnum);
+ #else
+                                     temp.word = ((u32 *) tcmd)[1] - 8;
+-                                    texnum = *((u16 *) (temp.word | 0x80000000));
++                                    texnum = *((u16 *) (temp.word | PORT_DRAM_K0_BASE));
+ #endif
+                                 }
+ 
+diff --git a/src/game/image_bank.c b/src/game/image_bank.c
+index b979844..0b34483 100644
+--- a/src/game/image_bank.c
++++ b/src/game/image_bank.c
+@@ -178,7 +178,7 @@ extern Gfx* globalDL_0x900;
+ extern Gfx* globalDL_0x9a8;
+ extern Gfx* globalDL_0xa50;
+ 
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ /* D39 (docs/dev/findings.md): on N64 all 49 symbols above link inside the
+  * Globalimagetable segment at physical 0x02xxxxxx (ge007.ld), so
+  * `globalbank_rdram_offset + (u32)&sym` rebases each onto pGlobalimagetable.
+diff --git a/src/game/initunk_005450.c b/src/game/initunk_005450.c
+index fef743b..94c9f41 100644
+--- a/src/game/initunk_005450.c
++++ b/src/game/initunk_005450.c
+@@ -38,7 +38,7 @@ void initModelHitEntryFreeList(void)
+         entries[i].prev = &entries[i - 1];
+     }
+ 
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+     // D40: N64 g_ModelHitEntriesPenultimate labels entry 598 of the pool; on PC the
+     // placeholder symbol is not emitted, so take the address directly.
+     ((ModelHitEntry *)g_ModelHitEntries)[MODELHITENTRIES_LEN - 1].prev = &entries[MODELHITENTRIES_LEN - 2];
+diff --git a/src/game/lv.c b/src/game/lv.c
+index 31a62db..59c9237 100644
+--- a/src/game/lv.c
++++ b/src/game/lv.c
+@@ -1,3 +1,9 @@
++#ifdef __SWITCH__
++extern void geEngineCheckpoint(const char *name);
++#define GE_SWITCH_CHECKPOINT(name) geEngineCheckpoint(name)
++#else
++#define GE_SWITCH_CHECKPOINT(name) ((void)0)
++#endif
+ #include <ultra64.h>
+ #include <math.h>
+ #ifdef PORT
+@@ -361,19 +367,30 @@ void lvlStageLoad(s32 stage)
+     g_StageTimeSec = 0.0f;
+     g_MpSoundStateRelated = 0;
+ 
++    GE_SWITCH_CHECKPOINT("level:sndSetScalerApplyVolumeAllSfxSlot");
+     sndSetScalerApplyVolumeAllSfxSlot(1.0f);
++    GE_SWITCH_CHECKPOINT("level:musicTrack1ApplySeqpVol");
+     musicTrack1ApplySeqpVol(VOLUME_MAX);
++    GE_SWITCH_CHECKPOINT("level:musicTrack2ApplySeqpVol");
+     musicTrack2ApplySeqpVol(VOLUME_MAX);
++    GE_SWITCH_CHECKPOINT("level:musicTrack3ApplySeqpVol");
+     musicTrack3ApplySeqpVol(VOLUME_MAX);
++    GE_SWITCH_CHECKPOINT("level:sub_GAME_7F0C1364");
+     sub_GAME_7F0C1364();
++    GE_SWITCH_CHECKPOINT("level:modelmgrSetLevelResetting");
+     modelmgrSetLevelResetting(TRUE);
++    GE_SWITCH_CHECKPOINT("level:set_mt_tex_alloc");
+     set_mt_tex_alloc();
+ #ifdef VERSION_EU
++    GE_SWITCH_CHECKPOINT("level:bullet_moving_sparks_reset");
+     bullet_moving_sparks_reset();
+ #else
++    GE_SWITCH_CHECKPOINT("level:bullet_sparks_reset_all");
+     bullet_sparks_reset_all();
+ #endif
++    GE_SWITCH_CHECKPOINT("level:texReset");
+     texReset();
++    GE_SWITCH_CHECKPOINT("level:load_font_tables");
+     load_font_tables();
+ 
+     /* If title screen, initialize screen and folder setup.
+@@ -579,20 +596,35 @@ void lvlStageLoad(s32 stage)
+         }
+     }
+ 
++    GE_SWITCH_CHECKPOINT("level:something_with_stage_objectives");
+     something_with_stage_objectives();
++    GE_SWITCH_CHECKPOINT("level:mpwatchUnpauseGame");
+     mpwatchUnpauseGame();
++    GE_SWITCH_CHECKPOINT("level:sub_GAME_7F09B820");
+     sub_GAME_7F09B820();
++    GE_SWITCH_CHECKPOINT("level:initModelHitEntryFreeList");
+     initModelHitEntryFreeList();
++    GE_SWITCH_CHECKPOINT("level:modelmgrResetSlotCounts");
+     modelmgrResetSlotCounts();
++    GE_SWITCH_CHECKPOINT("level:init_load_objpos_table");
+     init_load_objpos_table();
++    GE_SWITCH_CHECKPOINT("level:reinit_between_menus");
+     reinit_between_menus();
++    GE_SWITCH_CHECKPOINT("level:init_sound_effects_registers");
+     init_sound_effects_registers();
++    GE_SWITCH_CHECKPOINT("level:init_guards");
+     init_guards();
++    GE_SWITCH_CHECKPOINT("level:bodiesReset");
+     bodiesReset(stage);
++    GE_SWITCH_CHECKPOINT("level:proplvreset2");
+     proplvreset2(stage);
++    GE_SWITCH_CHECKPOINT("level:alloc_explosion_smoke_casing_scorch_impact_buffers");
+     alloc_explosion_smoke_casing_scorch_impact_buffers();
++    GE_SWITCH_CHECKPOINT("level:alloc_shattered_window_pieces");
+     alloc_shattered_window_pieces();
++    GE_SWITCH_CHECKPOINT("level:sub_GAME_7F007290");
+     sub_GAME_7F007290();
++    GE_SWITCH_CHECKPOINT("level:initCheatTextBuffer");
+     initCheatTextBuffer();
+ 
+     if (g_CurrentStageToLoad == LEVELID_TITLE)
+@@ -625,11 +657,15 @@ void lvlStageLoad(s32 stage)
+      * Leave stage load allocation mode.
+      * From this point on, model creation should try to reuse existing slots.
+      */
++    GE_SWITCH_CHECKPOINT("level:modelmgrSetLevelResetting");
+     modelmgrSetLevelResetting(FALSE);
+     
++    GE_SWITCH_CHECKPOINT("level:zbufDeallocate");
+     zbufDeallocate();
++    GE_SWITCH_CHECKPOINT("level:viSetVideoMode");
+     viSetVideoMode(MD_NORMAL);
+     D_80048368 = 1.0f;
++    GE_SWITCH_CHECKPOINT("level:lvlSetControlsLockedFlag");
+     lvlSetControlsLockedFlag(0);
+ }
+ 
+diff --git a/src/game/objecthandler.c b/src/game/objecthandler.c
+index 99def1f..64b2c49 100644
+--- a/src/game/objecthandler.c
++++ b/src/game/objecthandler.c
+@@ -4,7 +4,7 @@
+ #include "model.h"
+ 
+ // bss
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ // D40: the N64 placeholder chain below (g_ModelHitEntries .. g_ModelHitEntriesPenultimate)
+ // forms one contiguous 600 x 20-byte ModelHitEntry pool in CODE.bss. On x86-64
+ // ModelHitEntry is 40 bytes (two pointer pairs), so initModelHitEntryFreeList()
+diff --git a/src/game/propobj.c b/src/game/propobj.c
+index 3c75aa9..afe3070 100644
+--- a/src/game/propobj.c
++++ b/src/game/propobj.c
+@@ -1,3 +1,8 @@
++#ifdef PORT
++#include "portaddr.h"
++#else
++#define PORT_DRAM_K0_BASE 0x80000000U
++#endif
+ /*---------------------------------------------------------------------
+ 
+ 	File		propobj.c
+@@ -8676,7 +8681,7 @@ bool bgTestHitOnObj(coord3d *arg0, coord3d *arg1, coord3d *arg2, Gfx *gdl, Gfx *
+                     else
+                     {
+                         padC = ((u32 *) tcmd)[1] - 8;
+-                        texnum = *((u16 *) (padC | 0x80000000));
++                        texnum = *((u16 *) (padC | PORT_DRAM_K0_BASE));
+                     }
+ #endif
+ 
+@@ -8830,7 +8835,7 @@ bool bgTestHitOnObj(coord3d *arg0, coord3d *arg1, coord3d *arg2, Gfx *gdl, Gfx *
+                         else
+                         {
+                             padC = ((u32 *) tcmd)[1] - 8;
+-                            texnum = *((u16 *) (padC | 0x80000000));
++                            texnum = *((u16 *) (padC | PORT_DRAM_K0_BASE));
+                         }
+ #endif
+ 
+diff --git a/src/game/rsp.c b/src/game/rsp.c
+index 398e522..b84ebf1 100644
+--- a/src/game/rsp.c
++++ b/src/game/rsp.c
+@@ -281,7 +281,7 @@ void rspGfxTaskStart(Gfx *firstGdl, Gfx *gdl, s32 arg2, OSMesg rspReplyMsg)
+     // Toggles the g_gfxTaskSettingsList to point to altnerate tasks.
+     // Depends on first assignment taking place (g_gfxTaskSettingsList = g_gfxTaskSettings[0]).
+     // Not a typo, but probably not best practice.
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+     // D32-class: the XOR idiom below truncates exe pointers to u32 on x86-64 and
+     // yields garbage; toggle explicitly (same semantics: list is always &[0] or &[1]).
+     g_gfxTaskSettingsList = (g_gfxTaskSettingsList == &g_gfxTaskSettings[0]) ? &g_gfxTaskSettings[1] : &g_gfxTaskSettings[0];
+diff --git a/src/game/title.c b/src/game/title.c
+index ce673e6..736e74b 100644
+--- a/src/game/title.c
++++ b/src/game/title.c
+@@ -1,3 +1,8 @@
++#ifdef PORT
++#include "portaddr.h"
++#else
++#define PORT_DRAM_K0_BASE 0x80000000U
++#endif
+ #include <ultra64.h>
+ #include <PR/gbi.h>
+ #include <PR/gu.h>
+@@ -526,7 +531,7 @@ void initializeGunBarrelIntro(u8 *gfxBuffer, s32 bufferSize)
+      * N64 K0 value from the physical offset; seg_addr() passes it through to
+      * the KSEG0 mirror at 0x80000000 (segments 7/8 are never registered, so
+      * the unmarked-segment path is skipped). */
+-    sub_GAME_7F01BFF8(gunbarrelgfxListPointer, (Vtx *)(OS_K0_TO_PHYSICAL((void *)barrelDisplayListPtr) | 0x80000000u), 0x1E);
++    sub_GAME_7F01BFF8(gunbarrelgfxListPointer, (Vtx *)(OS_K0_TO_PHYSICAL((void *)barrelDisplayListPtr) | PORT_DRAM_K0_BASE), 0x1E);
+ #else
+     sub_GAME_7F01BFF8(gunbarrelgfxListPointer, barrelDisplayListPtr + 0x80000000, 0x1E);
+ #endif
+diff --git a/src/libultra/audio/load.c b/src/libultra/audio/load.c
+index 2f2cdd8..d46660b 100644
+--- a/src/libultra/audio/load.c
++++ b/src/libultra/audio/load.c
+@@ -23,7 +23,7 @@
+ #include "synthInternals.h"
+ #include <os.h>
+ #include <R4300.h>
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include "audiotrace.h"   /* D202/M-70: serialized trace writer */
+@@ -200,7 +200,7 @@ Acmd *alAdpcmPull(void *filter, s16 *outp, s32 outCount, s32 sampleOffset, Acmd
+         f->memin += ADPCMFBYTES*nframes;    
+     }
+ 
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+     /* D202/M-65 diag (temporary): a wave with no ALADPCMloop must run out and
+      * be zero-filled (nOver > 0) once memin passes base+len. If a voice keeps
+      * decoding past that point, an unstopped voice stays audible forever
+@@ -393,7 +393,7 @@ alLoadParam(void *filter, s32 paramID, void *param)
+     switch (paramID) {
+         case (AL_FILTER_SET_WAVETABLE):
+             a->table = (ALWaveTable *) param;
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+             if (GE_ENVFLAG("GE_AUDIOTRACE")) {
+                 extern uint64_t sysGetMicroseconds(void); /* port/src/system.c */
+                 geTracePrintf("audiotrace_wire.log", "[WIRE] t=%llu filter=%p <- table=%p base=%p len=%d book=%p\n",
+@@ -496,7 +496,7 @@ Acmd *_decodeChunk(Acmd *ptr, ALLoadFilter *f, s32 tsam, s32 nbytes, s16 outp, s
+         dramLoc;
+     
+     if (nbytes > 0){
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+         if (GE_ENVFLAG("GE_MIXERTRACE")) {
+             static FILE *dtf = NULL;
+             if (!dtf) { dtf = fopen("mixertrace.log", "a"); if (dtf) setvbuf(dtf, NULL, _IONBF, 0); }
+diff --git a/src/libultra/audio/save.c b/src/libultra/audio/save.c
+index fe68dd3..a43cc79 100644
+--- a/src/libultra/audio/save.c
++++ b/src/libultra/audio/save.c
+@@ -21,7 +21,7 @@
+ #include <libaudio.h>
+ #include "synthInternals.h"
+ #include <os.h>
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ #endif
+ #include "include/assert.h"
+ 
+diff --git a/src/libultra/audio/synsetfxmix.c b/src/libultra/audio/synsetfxmix.c
+index 4665ba1..80355bd 100644
+--- a/src/libultra/audio/synsetfxmix.c
++++ b/src/libultra/audio/synsetfxmix.c
+@@ -19,7 +19,7 @@
+  *====================================================================*/
+ 
+ #include "synthInternals.h"
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ #endif
+ #include <os_internal.h>
+ #include <ultraerror.h>
+diff --git a/src/libultra/audio/synsetpan.c b/src/libultra/audio/synsetpan.c
+index 7fd4443..1cd1082 100644
+--- a/src/libultra/audio/synsetpan.c
++++ b/src/libultra/audio/synsetpan.c
+@@ -19,7 +19,7 @@
+  *====================================================================*/
+ 
+ #include "synthInternals.h"
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ #endif
+ #include <os_internal.h>
+ #include <ultraerror.h>
+diff --git a/src/libultra/audio/synsetvol.c b/src/libultra/audio/synsetvol.c
+index c8f8a73..1c194a9 100644
+--- a/src/libultra/audio/synsetvol.c
++++ b/src/libultra/audio/synsetvol.c
+@@ -19,7 +19,7 @@
+  *====================================================================*/
+ 
+ #include "synthInternals.h"
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ #endif
+ #include <os_internal.h>
+ #include <ultraerror.h>
+diff --git a/src/libultra/audio/synthesizer.c b/src/libultra/audio/synthesizer.c
+index f870d28..ed25faf 100644
+--- a/src/libultra/audio/synthesizer.c
++++ b/src/libultra/audio/synthesizer.c
+@@ -20,7 +20,7 @@
+ 
+ #include "synthInternals.h"
+ #include "include/assert.h"
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ #include <stdio.h>
+ #include <stdlib.h>
+ #endif
+@@ -122,7 +122,7 @@ void alSynNew(ALSynth *drvr, ALSynConfig *c)
+         
+         pv->channelKnob   = (ALFilter *)&pv->envmixer;
+ 
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+         /* D202/M-69 diag (temporary): GE_AUDIOTRACE=1 logs the full
+          * PVoice -> decoder/resampler/env-state address map at synth init,
+          * so offline voicedump slot addresses can be tied to WIRE filter
+diff --git a/src/memp.c b/src/memp.c
+index 17353b8..4300693 100644
+--- a/src/memp.c
++++ b/src/memp.c
+@@ -73,7 +73,7 @@ void mempCheckMemflagTokens(s32 poolAreaStart, s32 poolAreaSize)
+     if (poolSizes.me == 0)
+     {
+         poolSizes.mf = 0;
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+         /* D36 (PC port): the PERMANENT bank must also hold the enlarged
+          * music heap (MUSIC_ALLOCATION_BYTES in src/music.c, 0x2E000 ->
+          * 0x32000 on x86-64 due to libaudio pointer bloat). Grow the bank on
+diff --git a/src/music.c b/src/music.c
+index 4fe96ce..c7f7f5b 100644
+--- a/src/music.c
++++ b/src/music.c
+@@ -1,3 +1,9 @@
++#ifdef __SWITCH__
++extern void geEngineCheckpoint(const char *name);
++#define GE_SWITCH_CHECKPOINT(name) geEngineCheckpoint(name)
++#else
++#define GE_SWITCH_CHECKPOINT(name) ((void)0)
++#endif
+ #include <ultra64.h>
+ #include <PR/libaudio.h>
+ #include "inflate/inflate.h"
+@@ -52,7 +58,7 @@
+  * allocated later from this heap need N64-equivalent headroom on top, so
+  * budget 0x38000 (init headroom ~19 KiB). PC only.
+  */
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+ #define MUSIC_ALLOCATION_BYTES   0x38000
+ #else
+ #define MUSIC_ALLOCATION_BYTES   0x2E000
+@@ -671,6 +677,7 @@ void musicSeqPlayerInit(void)
+         return;
+     }
+ 
++    GE_SWITCH_CHECKPOINT("music:mempAllocBytesInBank");
+     p = (u8 *)mempAllocBytesInBank(MUSIC_ALLOCATION_BYTES, MEMPOOL_PERMANENT);
+ 
+     mempAddress = p;
+@@ -679,27 +686,35 @@ void musicSeqPlayerInit(void)
+         *p++ = 0;
+     } while (p < mempAddress + MUSIC_ALLOCATION_BYTES);
+ 
++    GE_SWITCH_CHECKPOINT("music:alHeapInit");
+     alHeapInit(&g_musicHeap, mempAddress, MUSIC_ALLOCATION_BYTES);
+ 
+     if (MUSIC_CONFIG_USE_SFX_BANK)
+     {
+         size = (u32)&_sfxtblSegmentRomStart - (u32)&_sfxctlSegmentRomStart;
+ 
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+         // D37: the PC-native bank image is larger than the ROM segment
+         // (4-byte packed offsets become 8-byte pointer slots); allocate the
+         // re-laid-out size, copy only the ROM bytes, then convert.
+         {
+             u32 romSize = size;
++            GE_SWITCH_CHECKPOINT("music:romdataAudioBankPcSize");
+             size = romdataAudioBankPcSize((const u8 *)&_sfxctlSegmentRomStart, size);
++            GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+             sfxBank = alHeapAlloc(&g_musicHeap, 1, size);
++            GE_SWITCH_CHECKPOINT("music:romCopy");
+             romCopy(sfxBank, &_sfxctlSegmentRomStart, romSize);
++            GE_SWITCH_CHECKPOINT("music:romdataFixupAudioBank");
+             romdataFixupAudioBank(sfxBank, romSize, size);
+         }
+ #else
++        GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+         sfxBank = alHeapAlloc(&g_musicHeap, 1, size);
++        GE_SWITCH_CHECKPOINT("music:romCopy");
+         romCopy(sfxBank, &_sfxctlSegmentRomStart, size);
+ #endif
++        GE_SWITCH_CHECKPOINT("music:alBnkfNew");
+         alBnkfNew(sfxBank, (u8 *)&_sfxtblSegmentRomStart);
+         g_musicSfxBufferPtr = sfxBank->bankArray[0];
+     }
+@@ -708,19 +723,26 @@ void musicSeqPlayerInit(void)
+     {
+         size = (u32)&_instrumentstblSegmentRomStart - (u32)&_instrumentsctlSegmentRomStart;
+ 
+-#if defined(__x86_64__)
++#if (defined(__x86_64__) || (defined(PORT) && defined(__aarch64__)))
+         // D37: as above.
+         {
+             u32 romSize = size;
++            GE_SWITCH_CHECKPOINT("music:romdataAudioBankPcSize");
+             size = romdataAudioBankPcSize((const u8 *)&_instrumentsctlSegmentRomStart, size);
++            GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+             instrumentBank = alHeapAlloc(&g_musicHeap, 1, size);
++            GE_SWITCH_CHECKPOINT("music:romCopy");
+             romCopy(instrumentBank, &_instrumentsctlSegmentRomStart, romSize);
++            GE_SWITCH_CHECKPOINT("music:romdataFixupAudioBank");
+             romdataFixupAudioBank(instrumentBank, romSize, size);
+         }
+ #else
++        GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+         instrumentBank = alHeapAlloc(&g_musicHeap, 1, size);
++        GE_SWITCH_CHECKPOINT("music:romCopy");
+         romCopy(instrumentBank, &_instrumentsctlSegmentRomStart, size);
+ #endif
++        GE_SWITCH_CHECKPOINT("music:alBnkfNew");
+         alBnkfNew(instrumentBank, (u8 *)&_instrumentstblSegmentRomStart);
+         g_musicInstrumentBufferPtr = instrumentBank->bankArray[0];
+     }
+@@ -729,26 +751,35 @@ void musicSeqPlayerInit(void)
+ 
+     // is this sizeof(RareALSeqBankFile) ? which implies the struct isn't right...
+     size = 0x10;
++    GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+     g_musicDataTable = alHeapAlloc(&g_musicHeap, 1, size);
++    GE_SWITCH_CHECKPOINT("music:romCopy");
+     romCopy(g_musicDataTable, (void *)tblSegmentRomStartAddress, size);
+     // D35: decode the BE header (+0 seqCount) and any entries that fit,
+     // before seqCount is read below.
++    GE_SWITCH_CHECKPOINT("music:romdataFixupMusicSeqTable");
+     romdataFixupMusicSeqTable(g_musicDataTable, size);
+ 
+     tblSegmentSize = (sizeof(RareALSeqData) * g_musicDataTable->seqCount) + 4;
++    GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+     g_musicDataTable = alHeapAlloc(&g_musicHeap, 1, tblSegmentSize);
++    GE_SWITCH_CHECKPOINT("music:romCopy");
+     romCopy(g_musicDataTable, (void *)tblSegmentRomStartAddress, ALIGN16_a(tblSegmentSize));
+     // D35: the copy above reloaded raw BE bytes; decode the full table.
++    GE_SWITCH_CHECKPOINT("music:romdataFixupMusicSeqTable");
+     romdataFixupMusicSeqTable(g_musicDataTable, ALIGN16_a(tblSegmentSize));
+ 
+     // end auReadSeqFileHeader
+ 
++    GE_SWITCH_CHECKPOINT("music:musicSeqFileNew");
+     musicSeqFileNew(g_musicDataTable, (u8*)&_musicsampletblSegmentRomStart);
+     
+     size = TRACK_1_DATA_SEQ_SIZE_BYTES;
++    GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+     g_musicXTrack1SeqData = alHeapAlloc(&g_musicHeap, 1, size);
+ 
+     size = TRACK_2_DATA_SEQ_SIZE_BYTES + TRACK_3_DATA_SEQ_SIZE_BYTES;
++    GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+     g_musicXTrack2SeqData = alHeapAlloc(&g_musicHeap, 1, size);
+     
+     g_musicXTrack3SeqData = (u8*)g_musicXTrack2SeqData + TRACK_2_DATA_SEQ_SIZE_BYTES;
+@@ -778,6 +809,7 @@ void musicSeqPlayerInit(void)
+     synconfig.heap = &g_musicHeap;
+     // synconfig.params, not set.
+ 
++    GE_SWITCH_CHECKPOINT("music:amCreateAudioManager");
+     amCreateAudioManager(&synconfig);
+ 
+     track1SeqpConfig.maxVoices = MUSIC_SEQ_CONFIG_MAX_VOICES;
+@@ -805,17 +837,26 @@ void musicSeqPlayerInit(void)
+     track3SeqpConfig.stopOsc = NULL;
+ 
+     size = sizeof(ALCSPlayer); // 0x7C
++    GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+     g_musicXTrack1SeqPlayer = alHeapAlloc(&g_musicHeap, 1, size);
++    GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+     g_musicXTrack2SeqPlayer = alHeapAlloc(&g_musicHeap, 1, size);
++    GE_SWITCH_CHECKPOINT("music:alHeapAlloc");
+     g_musicXTrack3SeqPlayer = alHeapAlloc(&g_musicHeap, 1, size);
+ 
+     // Typo / mistake, the following calls to alSeqpSetBank should actually
+     // be to alCSPSetBank.
++    GE_SWITCH_CHECKPOINT("music:alCSPNew");
+     alCSPNew(g_musicXTrack1SeqPlayer, &track1SeqpConfig);
++    GE_SWITCH_CHECKPOINT("music:alSeqpSetBank");
+     alSeqpSetBank((ALSeqPlayer *)g_musicXTrack1SeqPlayer, g_musicInstrumentBufferPtr);
++    GE_SWITCH_CHECKPOINT("music:alCSPNew");
+     alCSPNew(g_musicXTrack2SeqPlayer, &track2SeqpConfig);
++    GE_SWITCH_CHECKPOINT("music:alSeqpSetBank");
+     alSeqpSetBank((ALSeqPlayer *)g_musicXTrack2SeqPlayer, g_musicInstrumentBufferPtr);
++    GE_SWITCH_CHECKPOINT("music:alCSPNew");
+     alCSPNew(g_musicXTrack3SeqPlayer, &track3SeqpConfig);
++    GE_SWITCH_CHECKPOINT("music:alSeqpSetBank");
+     alSeqpSetBank((ALSeqPlayer *)g_musicXTrack3SeqPlayer, g_musicInstrumentBufferPtr);
+ 
+     sfxSeqpConfig.maxEvents = MUSIC_SFX_SEQ_CONFIG_MAX_EVENTS;
+@@ -823,7 +864,9 @@ void musicSeqPlayerInit(void)
+     sfxSeqpConfig.maybeMaxSounds = MUSIC_SFX_SEQ_MAYBE_MAX_SOUNDS;
+     sfxSeqpConfig.heap = &g_musicHeap;
+     
++    GE_SWITCH_CHECKPOINT("music:sndNewPlayerInit");
+     sndNewPlayerInit(&sfxSeqpConfig);
++    GE_SWITCH_CHECKPOINT("music:amStartAudioThread");
+     amStartAudioThread();
+ }
+ 

@@ -1,0 +1,20 @@
+[  15.277514] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.277517] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.277520] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.277523] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.292118] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000025462
+[  15.292148] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.292151] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x000000000000003f
+[  15.292154] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.292156] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.292158] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.292160] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  15.292162] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x000000000000000f
+[  15.318284] Render.Vulkan <Info> video_core/renderer_vulkan/vk_pipeline_cache.cpp:719:CreateGraphicsPipeline: 0xd169d9fcf041f77b
+[  18.371573] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000020461
+[  18.529295] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  18.576952] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x000000000000773f
+[  18.608851] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  18.659939] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  18.929514] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000
+[  22.860059] Debug <Critical> shader_recompiler/frontend/maxwell/decode.cpp:49:operator(): /__w/Workflow/Workflow/src/shader_recompiler/frontend/maxwell/decode.cpp: assert Invalid insn 0x0000000000000000

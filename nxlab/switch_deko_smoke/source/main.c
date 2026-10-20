@@ -14,7 +14,13 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "goldeneye_fast3d_bridge.h"
+#include "goldeneye_n64_memory.h"
+#ifdef GE_GFX_ADAPTER
+#include "goldeneye_gfx_subset.h"
+#endif
 #include <sys/stat.h>
 
 #define GE_FB_WIDTH 1280
@@ -22,6 +28,9 @@
 #define GE_NUM_FRAMES 2
 #define GE_CODE_BYTES (64u * 1024u)
 #define GE_CMD_BYTES (16u * 1024u)
+#ifndef GE_QUEUE_CMD_BYTES
+#define GE_QUEUE_CMD_BYTES DK_QUEUE_MIN_CMDMEM_SIZE
+#endif
 #define GE_TRACE "sdmc:/switch/lab-nx/goldeneye/deko_boot_trace.txt"
 
 typedef struct {
@@ -43,31 +52,102 @@ typedef struct {
 
 static GeDeko g_gpu;
 
-/* Host-to-GPU vertex staging: the primitive is a synthetic test ONLY. The
- * layout (3x position + 3x color) matches the two precompiled DKSH inputs.
- * This provides a concrete vertex-buffer path for a future Fast3D bridge.
+/* The synthetic triangle below is written in gfx_pc.cpp's real
+ * untextured RGB profile: vec4 clip position followed by vec3 combiner RGB.
+ * The bridge validates and converts it into deko3d's CPU-writable VBO.
+ * The real game engine has not yet been linked and produces no geometry here.
  */
-typedef struct {
-    float pos[3];
-    float rgb[3];
-} GeDekoVertex;
-
-static const GeDekoVertex g_triangle[3] = {
-    { {  0.0f,  0.8f, 0.0f }, { 1.0f, 0.0f, 0.0f } },
-    { { -0.8f, -0.8f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
-    { {  0.8f, -0.8f, 0.0f }, { 0.0f, 0.0f, 1.0f } }
+typedef ge_fast3d_vertex GeDekoVertex;
+static const float g_triangle_fast3d[21] = {
+     0.0f,  0.8f, 0.f, 1.f, 1.f, 0.f, 0.f,
+    -0.8f, -0.8f, 0.f, 1.f, 0.f, 1.f, 0.f,
+     0.8f, -0.8f, 0.f, 1.f, 0.f, 0.f, 1.f
 };
 
-
-static void ge_trace(const char *message)
+static void ge_trace_prepare(void)
 {
     mkdir("sdmc:/switch", 0777);
     mkdir("sdmc:/switch/lab-nx", 0777);
     mkdir("sdmc:/switch/lab-nx/goldeneye", 0777);
+}
+
+static void ge_trace(const char *message)
+{
+    ge_trace_prepare();
     FILE *file = fopen(GE_TRACE, "a");
     if (!file) return;
     fprintf(file, "%s\n", message);
     fclose(file);
+}
+
+static void ge_trace_begin(void)
+{
+    ge_trace_prepare();
+    /* newlib remove() can fall back to DeleteDirectory on a missing file.
+     * Eden 0.2.1 dereferences a null parent for that request on a fresh SD.
+     * Create parents first and truncate the file directly instead. */
+    FILE *file = fopen(GE_TRACE, "w");
+    if (file) fclose(file);
+}
+
+static void ge_debug(void *user, const char *context, DkResult result, const char *message)
+{
+    (void)user;
+    char line[512];
+    snprintf(line, sizeof line, "deko-debug context=%s result=%u message=%s",
+             context ? context : "?", (unsigned)result, message ? message : "?");
+    ge_trace(line);
+}
+
+#ifdef GE_GFX_ADAPTER
+static bool ge_adapter_draw(void *user, const float *vbo, size_t count,
+                            size_t triangles, const ge_fast3d_profile *profile)
+{
+    size_t written = 0;
+    return ge_fast3d_unpack_rgb(vbo, count, triangles, profile, user, 3, &written)
+               == GE_F3D_OK && written == 3;
+}
+#endif
+
+static bool ge_upload_diagnostic(void *vertex_cpu)
+{
+    /* Exercise the translated N64 arena on ARM64 without fixed mappings.
+     * The content is still generated diagnostic data, never a game DL. */
+    void *ram = calloc(1, GE_N64_RDRAM_SIZE);
+    if (!ram) return false;
+    ge_n64_memory memory;
+    void *physical = NULL, *kseg = NULL;
+    bool ok = ge_n64_memory_init(&memory, ram, GE_N64_RDRAM_SIZE) == GE_N64_OK &&
+        ge_n64_memory_span(&memory, 0x50000, sizeof g_triangle_fast3d, &physical) == GE_N64_OK &&
+        ge_n64_memory_span(&memory, GE_N64_K0_BASE + 0x50000,
+                           sizeof g_triangle_fast3d, &kseg) == GE_N64_OK && physical == kseg;
+    if (ok) {
+        memcpy(physical, g_triangle_fast3d, sizeof g_triangle_fast3d);
+        ge_trace("n64-translated-arena-alias-verified");
+#ifdef GE_GFX_ADAPTER
+        ge_gfx_sink sink = {vertex_cpu, ge_adapter_draw};
+        ok = ge_gfx_subset_attach(sink, GE_FB_WIDTH, GE_FB_HEIGHT);
+        struct GfxRenderingAPI *api = ge_gfx_subset_api();
+        if (ok) {
+            api->init();
+            api->start_frame();
+            api->create_and_load_new_shader(0x1000, 0);
+            api->set_viewport(0, 0, GE_FB_WIDTH, GE_FB_HEIGHT);
+            api->set_scissor(0, 0, GE_FB_WIDTH, GE_FB_HEIGHT);
+            api->draw_triangles(kseg, 21, 1);
+            api->end_frame();
+            ok = ge_gfx_subset_status() == GE_GFX_READY;
+            ge_trace(ok ? "gfx-rendering-api-subset-vbo-ready" : ge_gfx_subset_last_operation());
+        }
+#else
+        const ge_fast3d_profile profile = {1, 0, 0, 0, 0};
+        size_t written = 0;
+        ok = ge_fast3d_unpack_rgb(kseg, 21, 1, &profile, vertex_cpu, 3, &written)
+                 == GE_F3D_OK && written == 3;
+#endif
+    }
+    free(ram);
+    return ok;
 }
 
 static bool ge_load_shader(DkShader *shader, const char *path)
@@ -143,6 +223,7 @@ static bool ge_graphics_init(void)
 {
     DkDeviceMaker maker;
     dkDeviceMakerDefaults(&maker);
+    maker.cbDebug = ge_debug;
     g_gpu.device = dkDeviceCreate(&maker);
     if (!g_gpu.device) { ge_trace("device-create-failed"); return false; }
     ge_trace("device-created");
@@ -198,8 +279,11 @@ static bool ge_graphics_init(void)
     if (!g_gpu.vertex_mem) { ge_trace("vertex-memory-failed"); return false; }
     void *vertex_cpu = dkMemBlockGetCpuAddr(g_gpu.vertex_mem);
     if (!vertex_cpu) { ge_trace("vertex-address-failed"); return false; }
-    memcpy(vertex_cpu, g_triangle, sizeof(g_triangle));
-    ge_trace("cpu-vertex-buffer-uploaded");
+    if (!ge_upload_diagnostic(vertex_cpu)) {
+        ge_trace("fast3d-bridge-failed");
+        return false;
+    }
+    ge_trace("fast3d-untextured-rgb-vbo-ready");
 
     dkMemBlockMakerDefaults(&memory_maker, g_gpu.device, GE_CMD_BYTES);
     memory_maker.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached;
@@ -247,14 +331,14 @@ static bool ge_graphics_init(void)
     dkCmdBufBindColorState(g_gpu.command_buffer, &color);
     dkCmdBufBindColorWriteState(g_gpu.command_buffer, &write);
     DkVtxAttribState attributes[2] = {
-        { 0, 0, offsetof(GeDekoVertex, pos), DkVtxAttribSize_3x32, DkVtxAttribType_Float, 0 },
+        { 0, 0, offsetof(GeDekoVertex, position), DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0 },
         { 0, 0, offsetof(GeDekoVertex, rgb), DkVtxAttribSize_3x32, DkVtxAttribType_Float, 0 }
     };
     DkVtxBufferState buffer_states[1] = {
         { sizeof(GeDekoVertex), 0 }
     };
     DkBufExtents vertex_buffer = {
-        dkMemBlockGetGpuAddr(g_gpu.vertex_mem), sizeof(g_triangle)
+        dkMemBlockGetGpuAddr(g_gpu.vertex_mem), 3u * sizeof(GeDekoVertex)
     };
     dkCmdBufBindVtxAttribState(g_gpu.command_buffer, attributes, 2);
     dkCmdBufBindVtxBufferState(g_gpu.command_buffer, buffer_states, 1);
@@ -270,7 +354,7 @@ static bool ge_graphics_init(void)
      * uses neither compute nor depth nor shader scratch allocations. Keep
      * this queue configuration separate from the real game renderer. */
     queue_maker.flags = DkQueueFlags_Graphics | DkQueueFlags_DisableZcull;
-    queue_maker.commandMemorySize = DK_QUEUE_MIN_CMDMEM_SIZE;
+    queue_maker.commandMemorySize = GE_QUEUE_CMD_BYTES;
     queue_maker.perWarpScratchMemorySize = 0;
     ge_trace("queue-create-lean-start");
     g_gpu.queue = dkQueueCreate(&queue_maker);
@@ -295,6 +379,8 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
     fsdevMountSdmc();
+    /* A trace must describe this run, never append a stale success marker. */
+    ge_trace_begin();
     ge_trace("main-entered");
 
     Result romfs_result = romfsInit();

@@ -1,0 +1,2 @@
+# Patch context preserves upstream whitespace verbatim.
+patches/goldeneye-pc-port/*.patch -whitespace

@@ -16,3 +16,12 @@ __pycache__/
 *.keys
 private/
 reports-private/
+nxlab/switch_deko_smoke/build*/
+nxlab/switch_deko_smoke/romfs/
+nxlab/switch_loader/build/
+*.elf
+*.nacp
+*.map
+*.o
+
+nxlab/switch_engine_probe/build/
