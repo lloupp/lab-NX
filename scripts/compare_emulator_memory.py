@@ -85,7 +85,7 @@ def measure(command, dest, seconds=25.0, limit_mb=2800, every=0.5,
                                 stdin=subprocess.DEVNULL, start_new_session=True)
         pgid = os.getpgid(proc.pid)
         start = time.monotonic()
-        checkpoints = [5.0, 12.0, 20.0]
+        checkpoints = [5.0, 12.0, 20.0, 40.0, 60.0]
         try:
             while True:
                 elapsed = time.monotonic() - start
