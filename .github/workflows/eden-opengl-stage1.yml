@@ -25,10 +25,16 @@ jobs:
           name: stage1-eden-opengl-nro
           path: switch/castle_bootstrap/castle_nx_bootstrap.nro
           retention-days: 3
-  eden-opengl:
+  eden-renderer-matrix:
     needs: build-stage1
     runs-on: ubuntu-24.04
     timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      matrix:
+        renderer: ['0', '1', '2']
+    env:
+      RENDERER_BACKEND: ${{ matrix.renderer }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -53,22 +59,25 @@ jobs:
       - name: Launch Eden SDL2 CLI in software OpenGL with large-memory runner
         run: |
           set -euo pipefail
-          mkdir -p evidence home/config home/data home/cache home/runtime
+          mkdir -p evidence home/config home/data/eden/nand home/data/eden/sdmc home/cache home/runtime
           chmod 700 home/runtime
           cat > home/sdl2-config.ini <<'INI'
           [Renderer]
           backend\default=false
-          backend=0
+          backend=$RENDERER_BACKEND
           [Core]
           memory_layout_mode\default=false
           memory_layout_mode=0
           INI
-          echo "Eden CLI OpenGL, public stage-1 NRO, no firmware, no keys, no game files" > evidence/scope.txt
+          echo "Eden CLI renderer=$RENDERER_BACKEND, public stage-1 NRO, no firmware, no keys" > evidence/scope.txt
+          DISPLAY=:99 glxinfo -B > evidence/glxinfo-before.txt 2>&1 || true
           xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' \
             env HOME="$PWD/home" XDG_CONFIG_HOME="$PWD/home/config" \
               XDG_DATA_HOME="$PWD/home/data" XDG_CACHE_HOME="$PWD/home/cache" \
               XDG_RUNTIME_DIR="$PWD/home/runtime" SDL_AUDIODRIVER=dummy \
-              LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb \
+              LIBGL_ALWAYS_SOFTWARE=1 LIBGL_DRI3_DISABLE=1 \
+              MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
+              QT_QPA_PLATFORM=xcb \
             python3 scripts/compare_emulator_memory.py \
               --output evidence/eden --seconds 45 --limit-mb 8500 -- \
               "$PWD/squashfs-root/AppRun" eden-cli \
@@ -89,7 +98,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: eden-opengl-guest-proof
+          name: eden-stage1-renderer-${{ matrix.renderer }}-proof
           path: |
             evidence/
             eden-cli-help.txt
