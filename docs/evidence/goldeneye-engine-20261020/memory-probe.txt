@@ -1,0 +1,20 @@
+probe-entered; no game code or ROM
+env-process=00000000
+region-info-2=0000001100e00000 result=00000000
+region-info-3=0000001000000000 result=00000000
+region-info-4=0000002100e00000 result=00000000
+region-info-5=0000000200000000 result=00000000
+region-info-12=0000000008000000 result=00000000
+region-info-13=0000007ff8000000 result=00000000
+region-info-14=0000001080e00000 result=00000000
+region-info-15=0000000080000000 result=00000000
+query-10000000: base=0 size=804bb000 type=0 perm=0 rc=00000000
+query-70000000: base=0 size=804bb000 type=0 perm=0 rc=00000000
+query-80000000: base=0 size=804bb000 type=0 perm=0 rc=00000000
+fixed-rdram-map-result=00000000
+fixed-rdram-bidirectional-alias=PASS
+live-remap-rejected=PASS
+cleanup=00000000 retained=0
+released-view=PASS
+overlap-rejected=PASS
+memory-probe=PASS; no gameplay

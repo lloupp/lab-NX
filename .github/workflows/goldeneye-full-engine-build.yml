@@ -1,0 +1,39 @@
+name: GoldenEye full ARM64 engine build (not gameplay)
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/goldeneye-native-engine-integration]
+    paths:
+      - 'cmake/goldeneye-switch.cmake'
+      - 'nxlab/switch_engine_runtime/**'
+      - 'nxlab/switch_engine_probe/**'
+      - 'scripts/build_goldeneye_native_engine.py'
+      - 'patches/goldeneye-pc-port/**'
+      - '.github/workflows/goldeneye-full-engine-build.yml'
+permissions:
+  contents: read
+jobs:
+  full-engine-cross-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the complete pinned game and memory diagnostic for Switch
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work -e DEVKITPRO=/opt/devkitpro \
+            devkitpro/devkita64:latest bash -ec '
+              apt-get update -qq
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake ninja-build
+              pacman -Sy --noconfirm --needed switch-sdl2 switch-mesa switch-zlib
+              make -C nxlab/switch_engine_probe
+              python3 scripts/build_goldeneye_native_engine.py --work-dir /tmp/ge-engine --jobs 2
+              /opt/devkitpro/devkitA64/bin/aarch64-none-elf-readelf -h /tmp/ge-engine/build/ge007.aarch64
+              cat /tmp/ge-engine/build-manifest.json
+              cp /tmp/ge-engine/build-manifest.json /work/engine-build-manifest.json
+            '
+      # Full engine has upstream compiled asset arrays: do not upload the NRO.
+      # No ROM/sidecars are requested or supplied to this build-only job.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-full-engine-build-manifest-no-gameplay
+          path: engine-build-manifest.json

@@ -23,3 +23,5 @@ nxlab/switch_loader/build/
 *.nacp
 *.map
 *.o
+
+nxlab/switch_engine_probe/build/
