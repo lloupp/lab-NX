@@ -30,7 +30,12 @@ def main():
     parser.add_argument("--upstream", type=Path, required=True, help="pinned GoldenEye PC Port checkout")
     args = parser.parse_args()
     upstream = args.upstream.resolve()
-    head = subprocess.check_output(["git", "-C", str(upstream), "rev-parse", "HEAD"], text=True).strip()
+    # CI bind-mounts this explicitly selected checkout into a root container.
+    # Scope Git's ownership exception to this read and this exact directory.
+    head = subprocess.check_output(
+        ["git", "-c", f"safe.directory={upstream}", "-C", str(upstream), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
     if head != ENGINE:
         parser.error(f"upstream must be pinned to {ENGINE}")
     work = args.work_dir.resolve()
