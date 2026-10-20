@@ -1,0 +1,55 @@
+name: SOTC PS2 real ISO stream bridge
+on:
+  push:
+    branches: [feat/sotc-ps2-iso-stage0]
+    paths:
+      - 'ports/sotc/**'
+      - 'tests/native/test_sotc_iso_disc.cpp'
+      - '.github/workflows/sotc-iso-stream.yml'
+  pull_request:
+    paths:
+      - 'ports/sotc/**'
+      - 'tests/native/test_sotc_iso_disc.cpp'
+      - '.github/workflows/sotc-iso-stream.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-host:
+    name: Linux C++ and synthetic ISO tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile C++17 portable ISO bridge
+        run: |
+          cmake -S ports/sotc -B /tmp/build-sotc -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Debug
+          cmake --build /tmp/build-sotc --parallel 2
+      - name: Exercise nested ISO / malformed entries / paths / EOF
+        run: ctest --test-dir /tmp/build-sotc --output-on-failure
+
+  devkita64-object:
+    name: Compile reusable native ARM64 libnx object
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cross-compile actual streaming source without any game data
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work \
+            -e DEVKITPRO=/opt/devkitpro devkitpro/devkita64:latest \
+            bash -eo pipefail -c '
+              aarch64-none-elf-g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+                -Iports/sotc -c ports/sotc/iso_disc.cpp \
+                -o /work/sotc_iso_arm64.o
+              aarch64-none-elf-readelf -h /work/sotc_iso_arm64.o | grep AArch64
+            '
+          test -s sotc_iso_arm64.o
+      - name: Share non-proprietary object for future Celosia integration
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotc-iso-stream-arm64-object
+          path: sotc_iso_arm64.o
+          if-no-files-found: error
