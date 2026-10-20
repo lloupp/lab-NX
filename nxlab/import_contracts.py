@@ -2,7 +2,8 @@
 
 No code, keys, dumps or private paths are placed in the inventory JSON.
 The XEX import table contains both data descriptors and executable thunks;
-the decoded PE section flags distinguish them. Decoded XEX inputs are\nmapped memory images and their import descriptors live at RVA offsets.
+the decoded PE section flags distinguish them. Decoded XEX inputs are
+mapped memory images and their import descriptors live at RVA offsets.
 """
 from __future__ import annotations
 import argparse
