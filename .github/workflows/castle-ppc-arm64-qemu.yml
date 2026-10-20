@@ -1,7 +1,7 @@
 name: Switch PPC interpreter on native-equivalent Linux ARM64 (QEMU)
 on:
   push:
-    branches: [feat/castle-arm64-private-ppc-proof]
+    branches: [feat/castle-arm64-private-ppc-proof, fix/castle-xex-mapped-pe-rva]
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -15,6 +15,11 @@ jobs:
       - name: Validate Castle private-SD path using synthetic fixtures
         run: |
           python3 -m unittest discover -s tests -p test_switch_sd.py -v
+          python3 -m unittest discover -s tests -p test_ppc_leaf.py -v
+          python3 -m unittest discover -s tests -p test_lzx_image.py -v
+          python3 -m unittest discover -s tests -p test_import_contracts.py -v
+          gcc -std=c11 -Wall -Wextra -Werror -I switch/castle_bootstrap/include             switch/castle_bootstrap/source/ppc_pe.c             switch/castle_bootstrap/tests/test_ppc_pe.c             -o /tmp/test_mapped_guest_ppc
+          /tmp/test_mapped_guest_ppc
       - name: Install AArch64 cross compiler and user-mode emulator
         run: |
           sudo apt-get update -qq
