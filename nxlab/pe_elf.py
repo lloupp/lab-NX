@@ -1,6 +1,7 @@
 """Create a PRIVATE ELF32/PowerPC analysis wrapper for an Xbox PE .text section.
 
-The input must be a decoded XEX in-memory PE (RVA layout), not a\nconventional raw PE on disk. This is for disassembly and investigation only. It is not a playable port
+The input must be a decoded XEX in-memory PE (RVA layout), not a
+conventional raw PE on disk. This is for disassembly and investigation only. It is not a playable port
 or a full PE loader and never embeds a game binary into the public repo.
 """
 from __future__ import annotations
