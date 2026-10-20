@@ -30,10 +30,14 @@ case "$EDEN" in
   */eden-cli) CMD=("$EDEN");;
   *) echo "Pass the extracted Eden 0.2.1 AppRun or eden-cli binary" >&2; exit 2;;
 esac
-if git -C "$(dirname "$REPORT")" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "Evidence directory must remain outside Git" >&2
-  exit 2
-fi
+CHECK="$REPORT"
+while [[ "$CHECK" != "/" ]]; do
+  if [[ -e "$CHECK/.git" ]]; then
+    echo "Private report directory cannot be inside a Git worktree" >&2
+    exit 2
+  fi
+  CHECK="$(dirname "$CHECK")"
+done
 if [[ -z "$(printenv DISPLAY || true)" ]]; then
   echo "Eden requires an X11 DISPLAY; use your desktop or xvfb-run" >&2
   exit 2
