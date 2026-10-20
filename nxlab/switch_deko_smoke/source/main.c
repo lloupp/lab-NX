@@ -64,15 +64,30 @@ static const float g_triangle_fast3d[21] = {
      0.8f, -0.8f, 0.f, 1.f, 0.f, 0.f, 1.f
 };
 
-static void ge_trace(const char *message)
+static void ge_trace_prepare(void)
 {
     mkdir("sdmc:/switch", 0777);
     mkdir("sdmc:/switch/lab-nx", 0777);
     mkdir("sdmc:/switch/lab-nx/goldeneye", 0777);
+}
+
+static void ge_trace(const char *message)
+{
+    ge_trace_prepare();
     FILE *file = fopen(GE_TRACE, "a");
     if (!file) return;
     fprintf(file, "%s\n", message);
     fclose(file);
+}
+
+static void ge_trace_begin(void)
+{
+    ge_trace_prepare();
+    /* newlib remove() can fall back to DeleteDirectory on a missing file.
+     * Eden 0.2.1 dereferences a null parent for that request on a fresh SD.
+     * Create parents first and truncate the file directly instead. */
+    FILE *file = fopen(GE_TRACE, "w");
+    if (file) fclose(file);
 }
 
 static void ge_debug(void *user, const char *context, DkResult result, const char *message)
@@ -365,7 +380,7 @@ int main(int argc, char **argv)
     (void)argv;
     fsdevMountSdmc();
     /* A trace must describe this run, never append a stale success marker. */
-    remove(GE_TRACE);
+    ge_trace_begin();
     ge_trace("main-entered");
 
     Result romfs_result = romfsInit();
