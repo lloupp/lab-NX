@@ -56,13 +56,13 @@ def prepare(xex, sdmc_root, decoded_pe=None):
     digest=hashlib.sha256()
     try:
         with original.open("rb") as data, output.open("xb") as target:
-            target.chmod(0o600)
+            output.chmod(0o600)
             for block in iter(lambda:data.read(65536),b""):
                 target.write(block)
                 digest.update(block)
         if decoded is not None:
             with decoded.open("rb") as data, guest_output.open("xb") as target:
-                target.chmod(0o600)
+                guest_output.chmod(0o600)
                 shutil.copyfileobj(data, target, 65536)
         return {"status":"ready","title_id":"584108B7",
                 "guest_pe_verified":decoded is not None,
