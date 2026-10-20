@@ -61,7 +61,8 @@ jobs:
           struct.pack_into('<8sIIIIIIHHI',b,sec,b'.text\0\0\0',
                            0x200,0x50000,0x200,0x400,0,0,0,0,0x60000020)
           # Synthetic: addi r3,r3,104 ; blr
-          b[0x400:0x404]=bytes.fromhex('48000000')  # poison PE disk offset\n          b[0x50000:0x50008]=bytes.fromhex('386300684e800020')
+          b[0x400:0x404]=bytes.fromhex('48000000')  # poison PE disk offset
+          b[0x50000:0x50008]=bytes.fromhex('386300684e800020')
           Path('arm64-out/synthetic-pe.bin').write_bytes(b)
           PY
           arm64-out/ppc_leaf_probe.x86_64 arm64-out/synthetic-pe.bin 0x82050000 17 121 | tee arm64-out/host-result.json
