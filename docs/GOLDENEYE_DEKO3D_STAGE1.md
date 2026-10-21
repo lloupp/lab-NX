@@ -117,6 +117,27 @@ pela preparação de command memory e work buffer; a telemetria do guest
 **não permite distinguir qual dessas chamadas internas parou**. Atribuir
 o erro a uma dessas etapas específicas exigiria depuração do host/emulador.
 
+
+### Matriz de backends Eden 0.2.1
+
+Execução [#39598002283](https://github.com/lloupp/lab-NX/actions/runs/39598002283):
+
+| Gate | Vulkan llvmpipe | OpenGL GLSL (Xvfb) |
+| --- | --- | --- |
+| NRO ARM64/DKSH | PASS | PASS (mesmo artefato) |
+| Backend selecionado no log | PASS: Vulkan | PASS: OpenGL |
+| `main-entered` + `romfs-mounted` | PASS | **FAIL** (host sem contexto GLX) |
+| `queue-create-returned` | FAIL | **Não executou** |
+| `first-deko-frame-submitted` | FAIL | **Não executou** |
+| Diagnóstico do host | `std::bad_alloc` (varia por execução) | `glx: failed to create drisw screen`, `QGLXContext: Failed to create dummy context` |
+
+**Atenção:** o segundo teste não prova falha da fila no OpenGL porque
+a execução parou **antes** de entrar em `main` no guest. A workflow passou
+a instalar bibliotecas Mesa/GLX adicionais e a verificar `glxinfo` em
+Xvfb para corrigir essa limitação do ambiente de teste. Um backend só
+pode ser declarado testado se o log confirmar o backend e o guest
+registrar pelo menos `main-entered`.
+
 ### Mudanças e observabilidade
 
 - Criação da fila imediatamente após `device-created` com evento
