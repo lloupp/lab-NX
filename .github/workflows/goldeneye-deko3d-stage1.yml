@@ -62,10 +62,15 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            mesa-vulkan-drivers vulkan-tools xvfb xauth xdotool scrot \
+            mesa-vulkan-drivers vulkan-tools mesa-utils libgl1-mesa-dri libglx-mesa0 xvfb xauth xdotool scrot \
             libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0
           VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json vulkaninfo --summary
           file nro-dist/goldeneye-deko-smoke.nro
+      - name: Check Xvfb software OpenGL before Eden
+        if: matrix.backend == 'opengl'
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 MESA_LOADER_DRIVER_OVERRIDE=llvmpipe \
+            xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' glxinfo -B
       - name: Obtain official Eden 0.2.1 and extract its Linux AppImage
         run: |
           curl -fLsS --retry 3 --connect-timeout 20 --max-time 240 \
@@ -92,6 +97,8 @@ jobs:
           export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
           export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
           export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe SDL_AUDIODRIVER=dummy
+          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+          export LIBGL_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri
           timeout --signal=TERM --kill-after=4s 90s \
             xvfb-run -a -s '-screen 0 1280x720x24 +extension GLX +render -noreset' bash -ec '
               ./squashfs-root/AppRun -g "$PWD/nro-dist/goldeneye-deko-smoke.nro" \
