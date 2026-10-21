@@ -1,5 +1,6 @@
 #ifndef GOLDENEYE_N64_MEMORY_H
 #define GOLDENEYE_N64_MEMORY_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -14,13 +15,26 @@ extern "C" {
 
 /* Explicit translation, NOT fixed-address virtual memory. Engine code that
  * directly dereferences N64 addresses still needs a port-side adaptation.
- * Does not replace the unavailable Linux Mint commit d932006.
+ * The additive compatibility API below preserves the d932006 helper contract.
  */
 typedef struct {
     uint8_t *bytes;
     size_t size;
+    const uint8_t *rom;
+    size_t rom_size;
     struct { uint8_t *bytes; size_t size; } segments[16];
 } ge_n64_memory;
+
+/* Compatibility result/API from the local d932006 memory layer. Kept
+ * alongside the arena/segment API so callers can migrate incrementally. */
+typedef enum {
+    GE_N64_MEM_OK = 0,
+    GE_N64_MEM_INVALID = -1,
+    GE_N64_MEM_BOUNDS = -2,
+    GE_N64_MEM_ALIGNMENT = -3,
+    GE_N64_MEM_READ_ONLY = -4,
+    GE_N64_MEM_UNMAPPED = -5
+} ge_n64_mem_result;
 
 typedef enum {
     GE_N64_OK, GE_N64_ARGUMENT, GE_N64_ADDRESS, GE_N64_RANGE,
@@ -41,6 +55,25 @@ ge_n64_result ge_n64_memory_bind_segment(ge_n64_memory *memory, unsigned segment
  * Unknown addresses never fall through to an unchecked host-pointer cast. */
 ge_n64_result ge_n64_memory_display_span(const ge_n64_memory *memory,
                                        uint32_t word, size_t length, void **out);
+
+/* Legacy d932006 interface. ROM mappings are read-only; the DRAM aliases and
+ * bounds checks delegate to the same checked span implementation. */
+ge_n64_mem_result ge_n64_memory_bind(ge_n64_memory *memory,
+    uint8_t *dram, size_t dram_size, const uint8_t *rom, size_t rom_size);
+ge_n64_mem_result ge_n64_memory_resolve(const ge_n64_memory *memory,
+    uint32_t address, size_t length, bool write_access, void **host_pointer);
+ge_n64_mem_result ge_n64_memory_read_u8(const ge_n64_memory *memory,
+    uint32_t address, uint8_t *value);
+ge_n64_mem_result ge_n64_memory_read_be16(const ge_n64_memory *memory,
+    uint32_t address, uint16_t *value);
+ge_n64_mem_result ge_n64_memory_read_be32(const ge_n64_memory *memory,
+    uint32_t address, uint32_t *value);
+ge_n64_mem_result ge_n64_memory_write_u8(const ge_n64_memory *memory,
+    uint32_t address, uint8_t value);
+ge_n64_mem_result ge_n64_memory_write_be16(const ge_n64_memory *memory,
+    uint32_t address, uint16_t value);
+ge_n64_mem_result ge_n64_memory_write_be32(const ge_n64_memory *memory,
+    uint32_t address, uint32_t value);
 
 #ifdef __cplusplus
 }

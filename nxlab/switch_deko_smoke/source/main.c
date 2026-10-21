@@ -113,6 +113,7 @@ static bool ge_upload_diagnostic(void *vertex_cpu)
 {
     /* Exercise the translated N64 arena on ARM64 without fixed mappings.
      * The content is still generated diagnostic data, never a game DL. */
+    /* Function-owned scratch arena; every post-allocation path reaches free below. */
     void *ram = calloc(1, GE_N64_RDRAM_SIZE);
     if (!ram) return false;
     ge_n64_memory memory;

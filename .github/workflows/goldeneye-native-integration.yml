@@ -13,6 +13,7 @@ on:
       - 'patches/**'
       - 'tests/native/test_goldeneye_fast3d_bridge.c'
       - 'tests/native/test_goldeneye_n64_memory.c'
+      - 'tests/native/test_goldeneye_n64_memory_compat.c'
       - 'tests/native/test_goldeneye_gfx_subset.cpp'
       - 'tests/native/test_eden_macro_cache.cpp'
       - '.github/workflows/goldeneye-native-integration.yml'
@@ -22,7 +23,9 @@ jobs:
   bridge-contract:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Compile and execute Fast3D bridge host tests
         run: |
           set -eux
@@ -39,6 +42,12 @@ jobs:
             -fno-omit-frame-pointer -I nxlab/native nxlab/native/goldeneye_n64_memory.c \
             tests/native/test_goldeneye_n64_memory.c -o /tmp/ge-memory
           /tmp/ge-memory
+      - name: Preserve d932006 DRAM and ROM memory API compatibility
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -I nxlab/native nxlab/native/goldeneye_n64_memory.c \
+            tests/native/test_goldeneye_n64_memory_compat.c -o /tmp/ge-memory-compat
+          /tmp/ge-memory-compat
       - name: Check real pinned upstream GfxRenderingAPI contract
         run: |
           git init -q upstream
@@ -71,7 +80,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Check original loader remains unchanged
         run: |
           test -s nxlab/switch_loader/source/main.c
@@ -111,7 +122,7 @@ jobs:
           nm nxlab/switch_deko_smoke/goldeneye-deko-mme.elf | grep ge_n64_memory_span
           strings nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf |
             grep -E 'first-deko-frame-submitted|dksh-loaded|swapchain-created'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: goldeneye-deko3d-real-arm64-nro-and-dksh
           path: |
@@ -125,7 +136,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: goldeneye-deko3d-real-arm64-nro-and-dksh
           path: nro-dist
@@ -187,7 +198,7 @@ jobs:
           grep -qx 'n64-translated-arena-alias-verified' eden-evidence/guest_deko_trace.txt
           grep -qx 'gfx-rendering-api-subset-vbo-ready' eden-evidence/guest_deko_trace.txt
           echo 'Submission markers prove diagnostic execution; inspect captured pixels separately.'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: goldeneye-deko3d-eden-actual-execution
