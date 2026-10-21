@@ -119,7 +119,7 @@ jobs:
           test -s nxlab/switch_loader/goldeneye-nx-loader.elf
           test -s nxlab/switch_loader/goldeneye-nx-loader.nro
           readelf -h nxlab/switch_loader/goldeneye-nx-loader.elf | grep -E 'Machine:|Class:'
-          nm nxlab/switch_loader/goldeneye-nx-loader.elf | grep ge_n64_memory_resolve
+          nm nxlab/switch_loader/build/goldeneye_n64_memory.o | grep ge_n64_memory_resolve
           test -s nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
           test -s nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
           test -s nxlab/switch_deko_smoke/romfs/shaders/color_fsh.dksh
