@@ -102,13 +102,38 @@ jobs:
           grep -Ei 'deko|gpu|vulkan|booting game|error|fatal' \
             eden-evidence/eden_log.txt | tail -70 || true
           echo 'No game ROM in CI. A visible triangle would prove GPU diagnostic only.'
-          # Boot and shader loading are NOT equivalent to a successfully
-          # submitted GPU frame. This job must fail until deko3d actually
-          # presents graphics in Eden. Evidence is uploaded even on failure.
-          if ! grep -qx 'first-deko-frame-submitted' eden-evidence/guest_deko_trace.txt 2>/dev/null; then
-            echo '::error::Guest never submitted a deko3d framebuffer in Eden'
+          echo "---- Host exceptions ----"
+          grep -Ei 'length_error|bad_alloc|terminate called|fatal|exception' \
+            eden-evidence/stdout.txt | tail -20 || true
+      - name: Verify boot separately from GPU submission
+        if: always()
+        run: |
+          set -e
+          if grep -qx 'main-entered' eden-evidence/guest_deko_trace.txt 2>/dev/null &&
+             grep -qx 'romfs-mounted' eden-evidence/guest_deko_trace.txt 2>/dev/null; then
+            echo 'boot=PASS (guest main + RomFS)' | tee eden-evidence/boot-check.txt
+          else
+            echo 'boot=FAIL (missing main or RomFS)' | tee eden-evidence/boot-check.txt
+            echo '::error::NRO boot not proven'
             exit 1
           fi
+          if grep -qx 'queue-create-returned' eden-evidence/guest_deko_trace.txt 2>/dev/null; then
+            echo 'queue=PASS (dkQueueCreate returned)' | tee eden-evidence/queue-check.txt
+          else
+            echo 'queue=FAIL (dkQueueCreate did not return)' | tee eden-evidence/queue-check.txt
+          fi
+      - name: Verify first frame submission separately from boot
+        if: always()
+        run: |
+          if grep -qx 'first-deko-frame-submitted' eden-evidence/guest_deko_trace.txt 2>/dev/null; then
+            echo 'frame_submission=PASS (guest returned from present)' | tee eden-evidence/frame-check.txt
+          else
+            echo 'frame_submission=FAIL (no guest presentation proof)' | tee eden-evidence/frame-check.txt
+            echo '::error::No first frame submitted; screenshot still needs visual inspection'
+            exit 1
+          fi
+          echo 'WARNING: passing the guest marker does not prove visible pixels.'
+          echo 'Inspect after24s.png and after40s.png for an actual triangle.'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
