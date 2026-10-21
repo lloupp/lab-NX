@@ -161,6 +161,35 @@ O teste principal é executado pelo workflow
 na branch da PR #19. Não houve merge nem integração de Fast3D ou da
 branch local de memória `d932006`.
 
+
+### Resultado final da validação Mesa/GLX no CI — 21/10/2026
+
+Última matriz executada: [GitHub Actions #39598539943](https://github.com/lloupp/lab-NX/actions/runs/39598539943).
+
+| Comprovação | Vulkan / llvmpipe | OpenGL / llvmpipe |
+| --- | --- | --- |
+| Compilação ARM64 e DKSH | **PASS** | **PASS** (mesmo NRO) |
+| Backend escolhido pelo Eden | **PASS** | **PASS** |
+| Pré-verificação OpenGL com `glxinfo -B` | Não aplicável | **PASS**: direct rendering Yes, Mesa OpenGL 4.5 |
+| Guest `main-entered`, RomFS | **PASS** | **NÃO INICIOU** |
+| `device-created` | **PASS** | **NÃO ALCANÇOU** |
+| `queue-create-returned` | **FAIL** | **NÃO TESTADO** |
+| Primeiro frame submetido | **FAIL** | **NÃO TESTADO** |
+| Evidência do host | `std::bad_alloc` | `glx: failed to create drisw screen`; `QGLXContext: Failed to create dummy context` |
+
+No Vulkan, o último marcador continua sendo `queue-create-reference-start`.
+No OpenGL, o software GLX funciona para `glxinfo` mas a **AppImage do Eden**
+não consegue criar o contexto. Logo, não se pode concluir nada sobre o
+comportamento de `dkQueueCreate` no backend OpenGL. Não houve pixels
+renderizados em nenhum dos dois testes.
+
+Próxima etapa técnica: executar o mesmo NRO com GPU/driver nativo ou Switch
+físico, e coletar **stack trace do processo host** no Eden no ponto da falha
+(`nvGpuChannelCreate`, alocação de cmdbuf/workbuf, configuração dos engines).
+Somente depois do retorno real de `dkQueueCreate` validar acquire/submit/
+present e **captura visível** do triângulo. Este experimento não corrige o
+emulador por si só, apenas isola o bloqueio e torna o CI verificável.
+
 ## Como reproduzir no Linux Mint do usuário
 
 ```bash
