@@ -44,8 +44,13 @@ jobs:
             nxlab/switch_deko_smoke/romfs/shaders/*.dksh
           if-no-files-found: error
 
-  eden-vulkan:
+  eden-backend:
     needs: dksh-and-nro
+    name: Eden ${{ matrix.backend }} GPU probe
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [vulkan, opengl]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -75,6 +80,14 @@ jobs:
           export HOME="$PWD/eden-home"
           export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+          # 0 is OpenGL_GLSL; 1 is Vulkan in Eden's RendererBackend enum.
+          # Each matrix job uses its own HOME and settings, never silently
+          # claim a different backend without checking the emulator log.
+          if [ "${{ matrix.backend }}" = "opengl" ]; then
+            mkdir -p "$XDG_CONFIG_HOME/eden"
+            printf '%s\n' '[Renderer]' 'backend=0' \
+              > "$XDG_CONFIG_HOME/eden/qt-config.ini"
+          fi
           export QT_QPA_PLATFORM=xcb
           export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
           export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
@@ -105,6 +118,21 @@ jobs:
           echo "---- Host exceptions ----"
           grep -Ei 'length_error|bad_alloc|terminate called|fatal|exception' \
             eden-evidence/stdout.txt | tail -20 || true
+      - name: Verify actual emulator renderer
+        if: always()
+        run: |
+          if [ "${{ matrix.backend }}" = "opengl" ]; then
+            pattern='Renderer.backend: OpenGL'
+          else
+            pattern='Renderer.backend: Vulkan'
+          fi
+          if grep -q "$pattern" eden-evidence/eden_log.txt 2>/dev/null; then
+            echo "backend=PASS (${{ matrix.backend }})" | tee eden-evidence/backend-check.txt
+          else
+            echo "backend=FAIL (requested ${{ matrix.backend }}; check host log)" | tee eden-evidence/backend-check.txt
+            echo '::error::Selected renderer was not confirmed in Eden log'
+            exit 1
+          fi
       - name: Verify boot separately from GPU submission
         if: always()
         run: |
@@ -137,6 +165,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: goldeneye-deko3d-eden-actual-execution
+          name: goldeneye-deko3d-eden-${{ matrix.backend }}-actual-execution
           path: eden-evidence/
           if-no-files-found: warn
