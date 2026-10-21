@@ -85,7 +85,7 @@ jobs:
           # claim a different backend without checking the emulator log.
           if [ "${{ matrix.backend }}" = "opengl" ]; then
             mkdir -p "$XDG_CONFIG_HOME/eden"
-            printf '%s\n' '[Renderer]' 'backend=0' \
+            printf '%s\n' '[Renderer]' 'backend=0' 'backend\default=false' \
               > "$XDG_CONFIG_HOME/eden/qt-config.ini"
           fi
           export QT_QPA_PLATFORM=xcb
@@ -109,6 +109,7 @@ jobs:
           find "$XDG_DATA_HOME/eden" -maxdepth 6 -name 'deko_boot_trace.txt' -print \
              -exec cp {} eden-evidence/guest_deko_trace.txt \; || true
           cp "$XDG_DATA_HOME/eden/log/eden_log.txt" eden-evidence/eden_log.txt || true
+          cp "$XDG_CONFIG_HOME/eden/qt-config.ini" eden-evidence/renderer-config-after.ini || true
           echo "---- In-guest trace ----"
           cat eden-evidence/guest_deko_trace.txt 2>/dev/null || true
           echo "---- Eden relevant events ----"
