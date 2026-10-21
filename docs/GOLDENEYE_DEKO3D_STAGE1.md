@@ -63,6 +63,63 @@ A captura real do Eden permaneceu na tela **"Launching..."** com **0 FPS**. O pr
 
 **Importante:** a workflow `.github/workflows/goldeneye-deko3d-stage1.yml` separa o build e a tentativa real no Eden; o job do Eden **falha deliberadamente** se não houver o marcador de envio do primeiro frame; as capturas/logs são preservados via `if: always()`. Isso evita CI verde enganoso.
 
+
+## Experimento incremental — fila deko3d de referência (21/10/2026)
+
+O bloqueio original foi reproduzido no job Eden de
+[39346020067](https://github.com/lloupp/lab-NX/actions/runs/39346020067):
+`main-entered`, `romfs-mounted`, `device-created`, `swapchain-created`,
+`dksh-loaded` e `queue-create-lean-start` aparecem, mas não há
+`queue-create-returned` nem frame. **Não confundir build aprovado, boot do
+guest ou comandos gravados com pixels renderizados.**
+
+### Comparação técnica
+
+Referências:
+- [deko3d Primer — Queues](https://github.com/devkitPro/deko3d/blob/master/Primer.md)
+  (configuração e valores padrão de `DkQueueMaker`);
+- [Atmosphère — inicialização da fila da GPU console](https://git.niklascfw.de/OmniNX/Atmosphere/commit/d9fff85bc4)
+  (sequência `device -> queue`, `queueMaker.flags = DkQueueFlags_Graphics`).
+
+| Ponto | PR #19 original | Experimento de referência |
+| --- | --- | --- |
+| Ordem de inicialização | Device, swapchain, DKSH, command lists, **queue** | Device, **queue**, depois swapchain, DKSH e command lists |
+| Flags | `Graphics \| DisableZcull` | `Graphics` |
+| `commandMemorySize` | `DK_QUEUE_MIN_CMDMEM_SIZE` | Default deko3d (também mínimo) |
+| `perWarpScratchMemorySize` | `0` | Default deko3d |
+| `flushThreshold` | Default | Default |
+
+A configuração de referência vem de código de inicialização de deko3d usado
+no Switch, **não** de um teste oficialmente aprovado no Eden. Por isso
+esta mudança é um experimento de compatibilidade, não prova de correção
+do emulador. Ela retira sobrescritas desnecessárias e isola `dkQueueCreate`
+antes de recursos gráficos adicionais. Se o Eden falhar ainda nesta etapa,
+o próximo passo é capturar stack trace no host e comparar backend Vulkan com
+OpenGL ou GPU nativa; não afirmar sucesso do triângulo.
+
+### Mudanças e observabilidade
+
+- Criação da fila imediatamente após `device-created` com evento
+  `queue-create-reference-start`; somente um retorno real gera
+  `queue-create-returned` e `queue-ready`.
+- Trace em `sdmc:/switch/lab-nx/goldeneye/deko_boot_trace.txt` agora é
+  reiniciado em cada execução, evitando falsos positivos de sessões antigas.
+- Marcadores separados de `first-frame-acquire-start`,
+  `first-frame-image-acquired`, `first-frame-commands-submitted` e
+  `first-frame-present-returned` localizam o próximo possível bloqueio.
+- Workflow de CI possui validação independente de **boot** (main + RomFS),
+  **queue** (retorno do `dkQueueCreate`) e **submissão de frame** (retorno
+  do `PresentImage` sem erro), com relatórios `boot-check.txt`,
+  `queue-check.txt`, `frame-check.txt` e capturas PNG.
+- Mesmo `first-deko-frame-submitted` **não comprova pixels na tela**.
+  Uma captura efetiva com triângulo visível precisa ser inspecionada
+  separadamente para afirmar primeiro frame renderizado.
+
+O teste principal é executado pelo workflow
+[goldeneye-deko3d-stage1.yml](../.github/workflows/goldeneye-deko3d-stage1.yml)
+na branch da PR #19. Não houve merge nem integração de Fast3D ou da
+branch local de memória `d932006`.
+
 ## Como reproduzir no Linux Mint do usuário
 
 ```bash
