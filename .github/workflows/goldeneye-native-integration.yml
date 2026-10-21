@@ -91,6 +91,10 @@ jobs:
           test -s nxlab/switch_deko_smoke/source/main.c
           test -s nxlab/native/goldeneye_fast3d_bridge.c
           test ! -f nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
+      - name: Build original GoldenEye Switch loader in pinned SDK
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work/nxlab/switch_loader \
+            -e DEVKITPRO=/opt/devkitpro devkitpro/devkita64:20260219 make -j2
       - name: Fetch pinned interface and compile the ordinary SDK baseline
         run: |
           git init -q upstream
@@ -112,6 +116,10 @@ jobs:
       - name: Verify generated assets and executable type
         run: |
           set -eux
+          test -s nxlab/switch_loader/goldeneye-nx-loader.elf
+          test -s nxlab/switch_loader/goldeneye-nx-loader.nro
+          readelf -h nxlab/switch_loader/goldeneye-nx-loader.elf | grep -E 'Machine:|Class:'
+          nm nxlab/switch_loader/goldeneye-nx-loader.elf | grep ge_n64_memory_resolve
           test -s nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
           test -s nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
           test -s nxlab/switch_deko_smoke/romfs/shaders/color_fsh.dksh
@@ -124,6 +132,12 @@ jobs:
           nm nxlab/switch_deko_smoke/goldeneye-deko-mme.elf | grep ge_n64_memory_span
           strings nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf |
             grep -E 'first-deko-frame-submitted|dksh-loaded|swapchain-created'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: goldeneye-switch-loader-arm64
+          path: |
+            nxlab/switch_loader/goldeneye-nx-loader.elf
+            nxlab/switch_loader/goldeneye-nx-loader.nro
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: goldeneye-deko3d-real-arm64-nro-and-dksh
