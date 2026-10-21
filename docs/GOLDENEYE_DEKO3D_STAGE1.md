@@ -162,6 +162,31 @@ na branch da PR #19. Não houve merge nem integração de Fast3D ou da
 branch local de memória `d932006`.
 
 
+
+### Comparação explícita com o exemplo oficial `deko_basic`
+
+O exemplo mínimo de deko3d do projeto switchbrew está em
+[`switchbrew/switch-examples/graphics/deko3d/deko_basic/source/main.c`](https://github.com/switchbrew/switch-examples/blob/master/graphics/deko3d/deko_basic/source/main.c)
+(linhas 167–171 na versão consultada). Ele usa:
+`dkQueueMakerDefaults(&queueMaker, g_device)`, define somente
+`queueMaker.flags = DkQueueFlags_Graphics` e chama `dkQueueCreate`.
+Também usa framebuffer **1280×720**, code memory **64 KiB** e
+command memory para command lists **16 KiB**, iguais aos tamanhos-base
+do smoke test desta PR.
+
+Uma diferença importante: o `deko_basic` oficial cria a fila
+**depois** de swapchain, DKSH e listas. A implementação inicial desta
+PR seguia essa ordem geral, mas tinha overrides adicionais de queue
+(`DisableZcull`, scratch=0). O experimento atual usa os flags do
+`deko_basic`, mas antecipa a fila para após o device para
+**isolar a causa do bloqueio**; não é uma exigência do exemplo oficial.
+
+Este arquivo oficial é uma **referência de código conhecida**; ainda
+**não foi comprovada sua execução no Eden deste CI**. Para separar um
+defeito global do backend de um defeito específico do nosso smoke,
+é recomendável compilar/rodar o `deko_basic` oficial, sem modificações,
+na mesma configuração de Eden v0.2.1, e comparar os logs de host.
+
 ### Resultado final da validação Mesa/GLX no CI — 21/10/2026
 
 Última matriz executada: [GitHub Actions #39598539943](https://github.com/lloupp/lab-NX/actions/runs/39598539943).
