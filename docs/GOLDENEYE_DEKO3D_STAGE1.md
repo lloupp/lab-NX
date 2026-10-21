@@ -97,6 +97,26 @@ antes de recursos gráficos adicionais. Se o Eden falhar ainda nesta etapa,
 o próximo passo é capturar stack trace no host e comparar backend Vulkan com
 OpenGL ou GPU nativa; não afirmar sucesso do triângulo.
 
+### Resultado real da configuração de referência
+
+O workflow [#39596692296](https://github.com/lloupp/lab-NX/actions/runs/39596692296)
+foi executado no Eden 0.2.1 em Ubuntu com Vulkan llvmpipe.
+
+- **Build ARM64/DKSH:** PASS.
+- **Boot do NRO:** PASS (`main-entered` e `romfs-mounted`).
+- **Device:** PASS (`device-created`).
+- **Fila:** FAIL — último marcador `queue-create-reference-start`; não ocorreu `queue-create-returned`.
+- **Primeiro frame:** FAIL — não houve `first-deko-frame-submitted`, nem prova de pixels.
+
+Isso demonstra que o travamento independe da criação de swapchain,
+carregamento DKSH ou gravação de comandos, que agora ocorrem *depois* da fila.
+A alteração é válida como isolamento, **mas não corrigiu o Eden**. O [fonte
+de `dkQueueCreate`](https://github.com/devkitPro/deko3d/blob/master/source/dk_queue.cpp)
+mostra que o início de `Queue::initialize` chama `nvGpuChannelCreate`, seguido
+pela preparação de command memory e work buffer; a telemetria do guest
+**não permite distinguir qual dessas chamadas internas parou**. Atribuir
+o erro a uma dessas etapas específicas exigiria depuração do host/emulador.
+
 ### Mudanças e observabilidade
 
 - Criação da fila imediatamente após `device-created` com evento
