@@ -139,6 +139,24 @@ static void ge_graphics_shutdown(void)
     }
 }
 
+/* Reference profile: same simple graphics-only queue flags used by the
+ * Atmosphere GPU console renderer. Create it directly after the device so a
+ * host failure is not conflated with DKSH, command list, or swapchain setup.
+ * Leave deko3d's validated command-memory and scratch defaults intact.
+ */
+static bool ge_create_reference_queue(void)
+{
+    DkQueueMaker queue_maker;
+    dkQueueMakerDefaults(&queue_maker, g_gpu.device);
+    queue_maker.flags = DkQueueFlags_Graphics;
+    ge_trace("queue-create-reference-start");
+    g_gpu.queue = dkQueueCreate(&queue_maker);
+    ge_trace("queue-create-returned");
+    if (!g_gpu.queue) { ge_trace("queue-create-failed"); return false; }
+    ge_trace("queue-ready");
+    return true;
+}
+
 static bool ge_graphics_init(void)
 {
     DkDeviceMaker maker;
@@ -146,6 +164,7 @@ static bool ge_graphics_init(void)
     g_gpu.device = dkDeviceCreate(&maker);
     if (!g_gpu.device) { ge_trace("device-create-failed"); return false; }
     ge_trace("device-created");
+    if (!ge_create_reference_queue()) return false;
 
     DkImageLayoutMaker layout_maker;
     dkImageLayoutMakerDefaults(&layout_maker, g_gpu.device);
@@ -264,29 +283,26 @@ static bool ge_graphics_init(void)
     g_gpu.render = dkCmdBufFinishList(g_gpu.command_buffer);
     ge_trace("render-commands-recorded");
 
-    DkQueueMaker queue_maker;
-    dkQueueMakerDefaults(&queue_maker, g_gpu.device);
-    /* Minimize memory pressure in software-Vulkan emulators. The diagnostic
-     * uses neither compute nor depth nor shader scratch allocations. Keep
-     * this queue configuration separate from the real game renderer. */
-    queue_maker.flags = DkQueueFlags_Graphics | DkQueueFlags_DisableZcull;
-    queue_maker.commandMemorySize = DK_QUEUE_MIN_CMDMEM_SIZE;
-    queue_maker.perWarpScratchMemorySize = 0;
-    ge_trace("queue-create-lean-start");
-    g_gpu.queue = dkQueueCreate(&queue_maker);
-    ge_trace("queue-create-returned");
-    if (!g_gpu.queue) { ge_trace("queue-create-failed"); return false; }
     ge_trace("deko3d-ready");
     return true;
 }
 
 static bool ge_graphics_present(void)
 {
+    static unsigned calls = 0;
+    bool first = (++calls == 1);
+    if (first) ge_trace("first-frame-acquire-start");
     int slot = dkQueueAcquireImage(g_gpu.queue, g_gpu.swapchain);
-    if (slot < 0 || slot >= GE_NUM_FRAMES) return false;
+    if (slot < 0 || slot >= GE_NUM_FRAMES) {
+        if (first) ge_trace("first-frame-acquire-failed");
+        return false;
+    }
+    if (first) ge_trace("first-frame-image-acquired");
     dkQueueSubmitCommands(g_gpu.queue, g_gpu.bind_target[slot]);
     dkQueueSubmitCommands(g_gpu.queue, g_gpu.render);
+    if (first) ge_trace("first-frame-commands-submitted");
     dkQueuePresentImage(g_gpu.queue, g_gpu.swapchain, slot);
+    if (first) ge_trace("first-frame-present-returned");
     return !dkQueueIsInErrorState(g_gpu.queue);
 }
 
@@ -295,6 +311,12 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
     fsdevMountSdmc();
+    /* Never accept milestones left over from a previous boot on the SDMC. */
+    mkdir("sdmc:/switch", 0777);
+    mkdir("sdmc:/switch/lab-nx", 0777);
+    mkdir("sdmc:/switch/lab-nx/goldeneye", 0777);
+    FILE *trace_file = fopen(GE_TRACE, "w");
+    if (trace_file) fclose(trace_file);
     ge_trace("main-entered");
 
     Result romfs_result = romfsInit();
