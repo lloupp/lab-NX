@@ -33,6 +33,7 @@ jobs:
               python3 tests/native/test_goldeneye_portal_bounds.py --upstream /tmp/ge-engine/source
               /opt/devkitpro/devkitA64/bin/aarch64-none-elf-readelf -h /tmp/ge-engine/build/ge007.aarch64
               /opt/devkitpro/devkitA64/bin/aarch64-none-elf-strings /tmp/ge-engine/build/ge007.aarch64 | grep -F '[GE_FAST3D_TRACE]'
+              /opt/devkitpro/devkitA64/bin/aarch64-none-elf-strings /tmp/ge-engine/build/ge007.aarch64 | grep -F '[GE_FAST3D_ADAPTER]'
               cat /tmp/ge-engine/build-manifest.json
               cp /tmp/ge-engine/build-manifest.json /work/engine-build-manifest.json
             '

@@ -22,6 +22,13 @@ enum { GE_GFX_READY, GE_GFX_UNSUPPORTED, GE_GFX_BAD_STATE, GE_GFX_DRAW_FAILED };
  */
 bool ge_gfx_subset_attach(ge_gfx_sink sink, unsigned width, unsigned height);
 struct GfxRenderingAPI *ge_gfx_subset_api(void);
+/* Bounded mirror hook for the full-engine trace path. It forwards only known
+ * VBO profiles to the attached sink; this CPU bridge is not itself a GPU draw. */
+ge_fast3d_result ge_gfx_subset_submit_engine_batch(
+    const float *vbo, size_t floats, size_t triangles,
+    uint64_t shader_id0, uint32_t shader_id1, unsigned shader_inputs,
+    unsigned textures_mask, unsigned use_alpha, unsigned use_fog,
+    unsigned use_grayscale);
 int ge_gfx_subset_status(void);
 const char *ge_gfx_subset_last_operation(void);
 #ifdef __cplusplus

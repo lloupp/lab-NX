@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "fda76b69837e6c5aae436e0d3e798989e49b06d2",
+  "sha256": "672e7122b141bcc65b1ba3e2f7475dadfaca96434045aaaea5c28434fefb6733",
+  "nro_bytes": 8249400,
+  "architecture": "AArch64",
+  "rom_bundled": false,
+  "renderer": "Fast3D/Mesa/nouveau",
+  "fast3d_trace_enabled": true,
+  "fast3d_adapter_bridge_observer_enabled": true,
+  "deko3d_backend_enabled": false,
+  "gameplay_verified": false,
+  "compiler": "aarch64-none-elf-gcc (devkitA64) 15.2.0"
+}

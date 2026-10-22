@@ -148,7 +148,7 @@ static bool ge_upload_diagnostic(void *vertex_cpu)
             ge_trace(ok ? "gfx-rendering-api-subset-vbo-ready" : ge_gfx_subset_last_operation());
         }
 #else
-        const ge_fast3d_profile profile = {1, 0, 0, 0, 0};
+        const ge_fast3d_profile profile = {1, 0, 0, 0, 0, 0, 0};
         size_t written = 0;
         ok = ge_fast3d_unpack_rgb(kseg, 21, 1, &profile, vertex_cpu,
                                   GE_FAST3D_MAX_TRIANGLES * 3u, &written)

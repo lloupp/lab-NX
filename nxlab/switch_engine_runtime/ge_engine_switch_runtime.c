@@ -1,5 +1,6 @@
 #define GE_SWITCH_PLATFORM_TU 1
 #include "ge_switch_vm.h"
+#include "../fast3d/goldeneye_gfx_subset.h"
 #include <stdio.h>
 #include "hoststdlib.h"
 static unsigned char ram[0x800000] __attribute__((aligned(4096)));
@@ -30,6 +31,33 @@ void *geEngineLowStack(unsigned long size) {
 
 #include <sys/stat.h>
 #include <unistd.h>
+
+static bool geEngineFast3dSink(void *, const float *vbo, size_t floats,
+                               size_t triangles, const ge_fast3d_profile *profile)
+{
+    static ge_fast3d_vertex rgb_vertices[768];
+    static ge_fast3d_fogtex_vertex fogtex_vertices[768];
+    static unsigned conversion_events;
+    size_t vertices = 0;
+    ge_fast3d_result result;
+    if (profile->shader_id0 == 0x1000 && profile->shader_id1 == 0) {
+        result = ge_fast3d_unpack_rgb(vbo, floats, triangles, profile,
+                                      rgb_vertices, 768, &vertices);
+    } else if (profile->shader_id0 == GE_F3D_FOGTEX_RGB3_ID0 &&
+               profile->shader_id1 == GE_F3D_FOGTEX_RGB3_ID1) {
+        result = ge_fast3d_unpack_fogtex_rgb3(vbo, floats, triangles, profile,
+                                              fogtex_vertices, 768, &vertices);
+    } else {
+        return false;
+    }
+    if (conversion_events++ < 128) {
+        fprintf(stderr, "[GE_FAST3D_ADAPTER] cpu-conversion=%d profile=%016llx:%08x triangles=%lu vertices=%lu; GPU submit not wired\n",
+                result, (unsigned long long)profile->shader_id0, profile->shader_id1,
+                (unsigned long)triangles, (unsigned long)vertices);
+    }
+    return result == GE_F3D_OK;
+}
+
 void geEngineBoot(void) {
     fsdevMountSdmc();
     mkdir("sdmc:/switch",0777);
@@ -42,6 +70,10 @@ void geEngineBoot(void) {
     setvbuf(stderr,NULL,_IONBF,0);
     setvbuf(stdout,NULL,_IONBF,0);
     fprintf(stderr,"Switch ARM64 full engine entry; target Dam; gameplay not confirmed\n");
+    if (!ge_gfx_subset_attach((ge_gfx_sink){NULL, geEngineFast3dSink}, 1280, 720))
+        fprintf(stderr,"[GE_FAST3D_ADAPTER] attach failed\n");
+    else
+        fprintf(stderr,"[GE_FAST3D_ADAPTER] attached for bounded engine-batch conversion; GPU submit not wired\n");
 }
 
 #include <pthread.h>

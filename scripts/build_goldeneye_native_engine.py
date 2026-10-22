@@ -55,8 +55,17 @@ def main():
     trace_patch = ROOT / "patches/goldeneye-pc-port/fast3d-runtime-trace.patch"
     run("git", "apply", "--check", trace_patch, cwd=source)
     run("git", "apply", trace_patch, cwd=source)
+    adapter_patch = ROOT / "patches/goldeneye-pc-port/fast3d-adapter-bridge.patch"
+    run("git", "apply", "--check", adapter_patch, cwd=source)
+    run("git", "apply", adapter_patch, cwd=source)
     for name in ("ge_switch_vm.c", "ge_switch_vm.h", "ge_engine_switch_runtime.c"):
         shutil.copy2(ROOT / "nxlab/switch_engine_runtime" / name, source / "port/src" / name)
+    shutil.copy2(ROOT / "nxlab/native/goldeneye_fast3d_bridge.c", source / "port/src/goldeneye_fast3d_bridge.c")
+    for name in ("goldeneye_fast3d_bridge.h", "goldeneye_gfx_subset.h", "goldeneye_gfx_subset.cpp"):
+        shutil.copy2(ROOT / "nxlab/native" / name if name == "goldeneye_fast3d_bridge.h"
+                     else ROOT / "nxlab/engine_adapter" / name,
+                     source / "port/fast3d" / name)
+    shutil.copy2(ROOT / "nxlab/native/goldeneye_fast3d_bridge.h", source / "port/src/goldeneye_fast3d_bridge.h")
     # The original CMake source lists and all NTSC-U definitions remain authoritative.
     libs = dkp / "portlibs/switch"
     build = work / "build"
@@ -73,7 +82,8 @@ def main():
     manifest = {"upstream_commit": PIN, "sha256": hashlib.sha256(nro.read_bytes()).hexdigest(),
                 "nro_bytes": nro.stat().st_size, "architecture": "AArch64", "rom_bundled": False,
                 "renderer": "Fast3D/Mesa/nouveau", "fast3d_trace_enabled": True,
-                "gameplay_verified": False,
+                "fast3d_adapter_bridge_observer_enabled": True,
+                "deko3d_backend_enabled": False, "gameplay_verified": False,
                 "compiler": subprocess.check_output([str(dkp / "devkitA64/bin/aarch64-none-elf-gcc"), "--version"], text=True).splitlines()[0]}
     (work / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Experimental full-engine NRO: {work / 'goldeneye-native-engine.nro'}")
