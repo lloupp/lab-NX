@@ -30,6 +30,17 @@ int main(void)
     assert(dst[2].position[2] == .3f);
     assert(dst[2].rgb[2] == 1.f);
 
+    /* The same accepted layout can carry a full Fast3D batch, not only the
+     * one-triangle bootstrap fixture. */
+    float two_triangles[42];
+    ge_fast3d_vertex batch[6];
+    size_t batch_vertices = 0;
+    memcpy(two_triangles, fast3d_triangle, sizeof fast3d_triangle);
+    memcpy(two_triangles + 21, fast3d_triangle, sizeof fast3d_triangle);
+    assert(GE_F3D_OK == ge_fast3d_unpack_rgb(
+        two_triangles, 42, 2, &supported, batch, 6, &batch_vertices));
+    assert(batch_vertices == 6 && batch[5].rgb[2] == 1.f);
+
     /* Unsupported GL/combiner profiles must fail closed. */
     unsupported.use_alpha = 1;
     assert(GE_F3D_UNSUPPORTED_PROFILE == ge_fast3d_unpack_rgb(

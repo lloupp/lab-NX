@@ -74,6 +74,20 @@ Remaining gates: full engine memory/host ABI, real display lists, dynamic fenced
 
 Evidence: `docs/evidence/goldeneye-20261020/`. No ROM, original assets, firmware, keys or proprietary data are included.
 
+## Follow-up: bounded runtime telemetry and multi-triangle RGB batches
+
+The full-engine build now applies `patches/goldeneye-pc-port/fast3d-runtime-trace.patch`. With `GE_SWITCH`, `gfx_run()` logs up to 64 engine display-list entries and `gfx_flush()` logs up to 128 non-empty batches: shader key/options, float count/stride, triangle count, shader inputs/texture mask, alpha/modulate, RDP/geometry modes, and one transformed vertex sample. It does not dump ROM bytes or the full vertex buffer. The log prefix is `[GE_FAST3D_TRACE]` in the existing engine log. This instrumentation has passed an x86-64 host build with the trace define enabled; the full Switch cross-build is now wired to PR CI.
+
+The deko diagnostic VBO was enlarged to hold the Fast3D bridge's maximum 256-triangle batch for its existing untextured RGB profile. Bridge tests now cover a two-triangle input. This is still a synthetic fixture and does not connect the full engine to deko3d. No profile beyond canonical untextured RGB has been implemented, because no original-game batch/profile log has yet been collected.
+
+## Local ARM64/LSP validation update — 2026-10-22
+
+The pinned `devkitpro/devkita64:20260219` image was validated and exported to the user-local SDK path; both the standalone deko3d smoke and the `GE_UPSTREAM` API-adapter variant built as ELF64/AArch64. The complete experimental engine also cross-built from the pinned PC-port revision with the bounded `[GE_FAST3D_TRACE]` instrumentation in the binary. The build manifest records the NRO hash and explicitly keeps `gameplay_verified` false. Python source-archive extraction now retains the Python 3.12 data filter where available and validates path/type entries before using the Python 3.11 fallback.
+
+A Dockerized clangd setup now generates a non-committed compilation database and successfully checks the Switch smoke and adapter sources. clangd queried devkitA64 and resolved the SDK's newlib, libnx and deko3d include paths plus the pinned upstream `GfxRenderingAPI` header. Host C bridge, memory-compatibility, and portal-bounds sanitizer tests pass; the Python suite reports 89 passed and 3 skipped in this checkout.
+
+A local Eden 0.2.1 smoke launch reached the frontend `BootGame` event, but the process was terminated before a guest `deko_boot_trace.txt` appeared. This attempt is not counted as a rendered smoke frame. There is still no game-origin Fast3D trace, no verified original-geometry frame in Eden, and no full Fast3D-to-deko3d engine integration. The available evidence remains the earlier synthetic triangle; see `docs/evidence/goldeneye-20261022-local/` for this turn's exact build/test outcomes and limits.
+
 ## Sources and licenses
 
 - GoldenEye PC Port: https://github.com/jkdansereau/goldeneye-pc-port

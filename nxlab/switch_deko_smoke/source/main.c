@@ -28,6 +28,8 @@
 #define GE_NUM_FRAMES 2
 #define GE_CODE_BYTES (64u * 1024u)
 #define GE_CMD_BYTES (16u * 1024u)
+#define GE_FAST3D_MAX_TRIANGLES 256u
+#define GE_VERTEX_BYTES (32u * 1024u)
 #ifndef GE_QUEUE_CMD_BYTES
 #define GE_QUEUE_CMD_BYTES DK_QUEUE_MIN_CMDMEM_SIZE
 #endif
@@ -48,6 +50,7 @@ typedef struct {
     DkCmdList bind_target[GE_NUM_FRAMES];
     DkCmdList render;
     DkQueue queue;
+    uint32_t draw_vertices;
 } GeDeko;
 
 static GeDeko g_gpu;
@@ -104,8 +107,12 @@ static bool ge_adapter_draw(void *user, const float *vbo, size_t count,
                             size_t triangles, const ge_fast3d_profile *profile)
 {
     size_t written = 0;
-    return ge_fast3d_unpack_rgb(vbo, count, triangles, profile, user, 3, &written)
-               == GE_F3D_OK && written == 3;
+    if (triangles > GE_FAST3D_MAX_TRIANGLES) return false;
+    bool ok = ge_fast3d_unpack_rgb(vbo, count, triangles, profile, user,
+                                   GE_FAST3D_MAX_TRIANGLES * 3u, &written)
+              == GE_F3D_OK && written == triangles * 3u;
+    if (ok) g_gpu.draw_vertices = (uint32_t)written;
+    return ok;
 }
 #endif
 
@@ -143,8 +150,10 @@ static bool ge_upload_diagnostic(void *vertex_cpu)
 #else
         const ge_fast3d_profile profile = {1, 0, 0, 0, 0};
         size_t written = 0;
-        ok = ge_fast3d_unpack_rgb(kseg, 21, 1, &profile, vertex_cpu, 3, &written)
+        ok = ge_fast3d_unpack_rgb(kseg, 21, 1, &profile, vertex_cpu,
+                                  GE_FAST3D_MAX_TRIANGLES * 3u, &written)
                  == GE_F3D_OK && written == 3;
+        if (ok) g_gpu.draw_vertices = (uint32_t)written;
 #endif
     }
     free(ram);
@@ -274,7 +283,7 @@ static bool ge_graphics_init(void)
 
     /* CPU-writable / GPU-readable vertex storage. The backing block follows
      * deko3d alignment rules even though the actual triangle is tiny. */
-    dkMemBlockMakerDefaults(&memory_maker, g_gpu.device, DK_MEMBLOCK_ALIGNMENT);
+    dkMemBlockMakerDefaults(&memory_maker, g_gpu.device, GE_VERTEX_BYTES);
     memory_maker.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached;
     g_gpu.vertex_mem = dkMemBlockCreate(&memory_maker);
     if (!g_gpu.vertex_mem) { ge_trace("vertex-memory-failed"); return false; }
@@ -339,13 +348,15 @@ static bool ge_graphics_init(void)
         { sizeof(GeDekoVertex), 0 }
     };
     DkBufExtents vertex_buffer = {
-        dkMemBlockGetGpuAddr(g_gpu.vertex_mem), 3u * sizeof(GeDekoVertex)
+        dkMemBlockGetGpuAddr(g_gpu.vertex_mem),
+        g_gpu.draw_vertices * sizeof(GeDekoVertex)
     };
     dkCmdBufBindVtxAttribState(g_gpu.command_buffer, attributes, 2);
     dkCmdBufBindVtxBufferState(g_gpu.command_buffer, buffer_states, 1);
     dkCmdBufBindVtxBuffers(g_gpu.command_buffer, 0, &vertex_buffer, 1);
     ge_trace("vertex-buffer-bound");
-    dkCmdBufDraw(g_gpu.command_buffer, DkPrimitive_Triangles, 3, 1, 0, 0);
+    dkCmdBufDraw(g_gpu.command_buffer, DkPrimitive_Triangles,
+                 g_gpu.draw_vertices, 1, 0, 0);
     g_gpu.render = dkCmdBufFinishList(g_gpu.command_buffer);
     ge_trace("render-commands-recorded");
 
