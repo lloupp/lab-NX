@@ -2,15 +2,26 @@
 #include <limits.h>
 #include <string.h>
 
-struct ShaderProgram { uint64_t id0; uint32_t id1; };
-static ShaderProgram shade = {0x1000, 0};
-static ShaderProgram *loaded;
+/* Keep this backend-private type distinct from OpenGL's implementation of the
+ * upstream opaque ShaderProgram; the full engine links both translation units. */
+struct GeSubsetProgram { uint64_t id0; uint32_t id1; };
+typedef struct ShaderProgram GfxProgramHandle;
+static GeSubsetProgram shade = {0x1000, 0};
+static GeSubsetProgram *loaded;
 static ge_gfx_sink output;
 static unsigned screen_width, screen_height;
 static int status = GE_GFX_BAD_STATE;
 static const char *operation = "not-attached";
 static bool attached, in_frame;
 
+static GfxProgramHandle *as_handle(GeSubsetProgram *program)
+{
+    return reinterpret_cast<GfxProgramHandle *>(program);
+}
+static GeSubsetProgram *as_program(GfxProgramHandle *handle)
+{
+    return reinterpret_cast<GeSubsetProgram *>(handle);
+}
 static void fail(const char *name, int error = GE_GFX_UNSUPPORTED)
 {
     if (status == GE_GFX_READY) { status = error; operation = name; }
@@ -18,27 +29,29 @@ static void fail(const char *name, int error = GE_GFX_UNSUPPORTED)
 static const char *name(void) { return "deko3d SHADE RGB subset"; }
 static int max_texture(void) { return 0; }
 static GfxClipParameters clip(void) { return {true, false}; }
-static void unload(ShaderProgram *) { loaded = nullptr; }
-static void load(ShaderProgram *p)
+static void unload(GfxProgramHandle *) { loaded = nullptr; }
+static void load(GfxProgramHandle *handle)
 {
+    GeSubsetProgram *program = as_program(handle);
     loaded = nullptr;
-    if (p == &shade) loaded = p; else fail("load_shader");
+    if (program == &shade) loaded = program; else fail("load_shader");
 }
-static ShaderProgram *lookup(uint64_t id0, uint32_t id1)
+static GfxProgramHandle *lookup(uint64_t id0, uint32_t id1)
 {
-    return id0 == shade.id0 && id1 == 0 ? &shade : nullptr;
+    return id0 == shade.id0 && id1 == 0 ? as_handle(&shade) : nullptr;
 }
-static ShaderProgram *create(uint64_t id0, uint32_t id1)
+static GfxProgramHandle *create(uint64_t id0, uint32_t id1)
 {
-    ShaderProgram *p = lookup(id0, id1);
-    load(p);
-    return p;
+    GfxProgramHandle *handle = lookup(id0, id1);
+    load(handle);
+    return handle;
 }
-static void shader_info(ShaderProgram *p, uint8_t *n, bool textures[2])
+static void shader_info(GfxProgramHandle *handle, uint8_t *n, bool textures[2])
 {
-    if (n) *n = p == &shade ? 1 : 0;
+    GeSubsetProgram *program = as_program(handle);
+    if (n) *n = program == &shade ? 1 : 0;
     if (textures) textures[0] = textures[1] = false;
-    if (p != &shade || !n || !textures) fail("shader_get_info", GE_GFX_BAD_STATE);
+    if (program != &shade || !n || !textures) fail("shader_get_info", GE_GFX_BAD_STATE);
 }
 static void clear_shaders(void) { loaded = nullptr; }
 static uint32_t new_texture(void) { fail("new_texture"); return 0; }
@@ -69,7 +82,7 @@ static void draw(float *vbo, size_t count, size_t triangles)
 {
     if (!in_frame || !loaded) fail("draw_without_frame_or_shader", GE_GFX_BAD_STATE);
     if (status != GE_GFX_READY) return;
-    const ge_fast3d_profile profile = {1, 0, 0, 0, 0};
+    const ge_fast3d_profile profile = {1, 0, 0, 0, 0, 0, 0};
     if (!output.draw(output.user, vbo, count, triangles, &profile))
         fail("draw_sink", GE_GFX_DRAW_FAILED);
 }
@@ -157,4 +170,24 @@ extern "C" GfxRenderingAPI *ge_gfx_subset_api(void)
     return &api;
 }
 extern "C" int ge_gfx_subset_status(void) { return status; }
+extern "C" ge_fast3d_result ge_gfx_subset_submit_engine_batch(
+    const float *vbo, size_t floats, size_t triangles,
+    uint64_t shader_id0, uint32_t shader_id1, unsigned shader_inputs,
+    unsigned textures_mask, unsigned use_alpha, unsigned use_fog,
+    unsigned use_grayscale)
+{
+    if (!vbo || !attached || !output.draw) return GE_F3D_BAD_ARGUMENT;
+    const ge_fast3d_profile profile = {
+        shader_inputs, textures_mask, use_alpha, use_fog, use_grayscale,
+        shader_id0, shader_id1
+    };
+    if (!((shader_id0 == 0x1000 && shader_id1 == 0 && shader_inputs == 1 &&
+           textures_mask == 0 && !use_alpha && !use_fog && !use_grayscale) ||
+          (shader_id0 == GE_F3D_FOGTEX_RGB3_ID0 &&
+           shader_id1 == GE_F3D_FOGTEX_RGB3_ID1 && shader_inputs == 3 &&
+           textures_mask == 1 && !use_alpha && use_fog && !use_grayscale)))
+        return GE_F3D_UNSUPPORTED_PROFILE;
+    return output.draw(output.user, vbo, floats, triangles, &profile)
+        ? GE_F3D_OK : GE_F3D_SINK_FAILED;
+}
 extern "C" const char *ge_gfx_subset_last_operation(void) { return operation; }

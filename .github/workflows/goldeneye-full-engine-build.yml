@@ -1,6 +1,8 @@
 name: GoldenEye full ARM64 engine build (not gameplay)
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [feat/goldeneye-native-engine-integration]
   push:
     branches: [feat/goldeneye-native-engine-integration]
     paths:
@@ -22,14 +24,16 @@ jobs:
       - name: Compile the complete pinned game and memory diagnostic for Switch
         run: |
           docker run --rm -v "$PWD:/work" -w /work -e DEVKITPRO=/opt/devkitpro \
-            devkitpro/devkita64:latest bash -ec '
+            devkitpro/devkita64:20260219 bash -ec '
               apt-get update -qq
               DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake ninja-build
-              dkp-pacman -Sy --noconfirm --needed switch-sdl2 switch-mesa switch-zlib
+              # The pinned devkitPro image already includes the required Switch portlibs.
               make -C nxlab/switch_engine_probe
               python3 scripts/build_goldeneye_native_engine.py --work-dir /tmp/ge-engine --jobs 2
               python3 tests/native/test_goldeneye_portal_bounds.py --upstream /tmp/ge-engine/source
               /opt/devkitpro/devkitA64/bin/aarch64-none-elf-readelf -h /tmp/ge-engine/build/ge007.aarch64
+              /opt/devkitpro/devkitA64/bin/aarch64-none-elf-strings /tmp/ge-engine/build/ge007.aarch64 | grep -F '[GE_FAST3D_TRACE]'
+              /opt/devkitpro/devkitA64/bin/aarch64-none-elf-strings /tmp/ge-engine/build/ge007.aarch64 | grep -F '[GE_FAST3D_ADAPTER]'
               cat /tmp/ge-engine/build-manifest.json
               cp /tmp/ge-engine/build-manifest.json /work/engine-build-manifest.json
             '

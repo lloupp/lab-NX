@@ -1,0 +1,44 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -48,7 +48,7 @@
+ # (port/src/romassets_<region>.s, see scripts/gen_romassets.py).
+ project(ge007 C CXX ASM)
+ if(GE_SWITCH)
+-  add_compile_definitions(PORT_DRAM_K0_BASE=0x60000000UL GE_FAST3D_TRACE=1)
++  add_compile_definitions(PORT_DRAM_K0_BASE=0x60000000UL GE_FAST3D_TRACE=1 GE_FAST3D_ENGINE_ADAPTER=1)
+   add_compile_options($<$<COMPILE_LANGUAGE:C>:-Dstrtol=geN64Strtol>)
+ endif()
+
+diff --git a/port/fast3d/gfx_pc.cpp b/port/fast3d/gfx_pc.cpp
+--- a/port/fast3d/gfx_pc.cpp
++++ b/port/fast3d/gfx_pc.cpp
+@@ -34,6 +34,9 @@
+ #include "gfx_cc.h"
+ #include "gfx_window_manager_api.h"
+ #include "gfx_rendering_api.h"
++#ifdef GE_FAST3D_ENGINE_ADAPTER
++#include "goldeneye_gfx_subset.h"
++#endif
+ #include "gfx_screen_config.h"
+
+ uintptr_t gfxFramebuffer;
+@@ -386,6 +389,18 @@
+                 rsp.geometry_mode, v[0], v[1], v[2], v[3],
+                 stride >= 7 ? v[4] : 0.f, stride >= 7 ? v[5] : 0.f,
+                 stride >= 7 ? v[6] : 0.f);
++#ifdef GE_FAST3D_ENGINE_ADAPTER
++            const unsigned adapter_batch = s_ge_trace_batches - 1u;
++            const int bridge_result = ge_gfx_subset_submit_engine_batch(
++                buf_vbo, buf_vbo_len, buf_vbo_num_tris, s_ge_trace_shader_id0,
++                s_ge_trace_shader_id1, s_ge_trace_num_inputs, s_ge_trace_texture_mask,
++                (s_ge_trace_shader_id1 & SHADER_OPT_ALPHA) != 0,
++                (s_ge_trace_shader_id1 & SHADER_OPT_FOG) != 0,
++                (s_ge_trace_shader_id1 & SHADER_OPT_GRAYSCALE) != 0);
++            fprintf(stderr, "[GE_FAST3D_ADAPTER] batch=%u result=%d shader=%016llx:%08x floats=%zu triangles=%zu\n",
++                adapter_batch, bridge_result, (unsigned long long)s_ge_trace_shader_id0,
++                s_ge_trace_shader_id1, buf_vbo_len, buf_vbo_num_tris);
++#endif
+         }
+ #endif
+         gfx_rapi->draw_triangles(buf_vbo, buf_vbo_len, buf_vbo_num_tris);

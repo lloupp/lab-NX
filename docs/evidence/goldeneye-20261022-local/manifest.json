@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-22",
+  "branch": "feat/goldeneye-memory-api-compat",
+  "pr": 25,
+  "sdk_image": "devkitpro/devkita64:20260219",
+  "sdk_image_id": "sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282",
+  "compiler": "aarch64-none-elf-gcc (devkitA64) 15.2.0",
+  "artifacts": {
+    "smoke_nro_sha256": "850b057d168f9b82705df453ee65a17e1b87fe11c1cbfdb0c562ec03e74376f8",
+    "adapter_nro_sha256": "358279bf60895b2d261fc7b93cf90f3673bc24c06f126d2e81e00e81e74f007a",
+    "full_engine_nro_sha256": "d3caf5fd167cd8162c9951bf694c97cd2b3088ed0e1b0c13c45a5ca60ac01a63",
+    "full_engine_nro_bytes": 8237112,
+    "full_engine_upstream_commit": "fda76b69837e6c5aae436e0d3e798989e49b06d2",
+    "full_engine_architecture": "AArch64",
+    "full_engine_renderer": "Fast3D/Mesa/nouveau",
+    "fast3d_trace_marker_linked": true,
+    "rom_bundled": false,
+    "gameplay_verified": false
+  },
+  "tests": {
+    "python": "89 passed, 3 skipped",
+    "fast3d_bridge_asan_ubsan": "passed",
+    "n64_memory_asan_ubsan": "passed",
+    "n64_memory_compat_asan_ubsan": "passed",
+    "portal_bounds_asan_ubsan": "3 cases passed; old adjacent-symbol implementation reproduces overflow",
+    "clangd_switch_main_c": "passed with devkitA64, libnx and deko3d headers",
+    "clangd_gfx_adapter_cpp": "passed with pinned GfxRenderingAPI header"
+  },
+  "eden": {
+    "version": "0.2.1",
+    "smoke_launch_attempted": true,
+    "frontend_boot_game_logged": true,
+    "guest_trace_found": false,
+    "first_deko_frame_marker": false,
+    "screenshot_frame_verified": false,
+    "result": "process terminated before guest trace; not a smoke-render pass"
+  },
+  "game_origin_geometry_in_eden": false,
+  "physical_switch_tested": false
+}
