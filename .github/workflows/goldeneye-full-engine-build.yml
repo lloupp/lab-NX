@@ -27,7 +27,7 @@ jobs:
             devkitpro/devkita64:20260219 bash -ec '
               apt-get update -qq
               DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake ninja-build
-              dkp-pacman -Sy --noconfirm --needed switch-sdl2 switch-mesa switch-zlib
+              # The pinned devkitPro image already includes the required Switch portlibs.
               make -C nxlab/switch_engine_probe
               python3 scripts/build_goldeneye_native_engine.py --work-dir /tmp/ge-engine --jobs 2
               python3 tests/native/test_goldeneye_portal_bounds.py --upstream /tmp/ge-engine/source
