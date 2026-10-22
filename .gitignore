@@ -17,7 +17,8 @@ __pycache__/
 private/
 reports-private/
 nxlab/switch_deko_smoke/build*/
-nxlab/switch_deko_smoke/romfs/
+nxlab/switch_deko_smoke/compile_commands.json
+nxlab/switch_deko_smoke/romfs*/
 nxlab/switch_loader/build/
 *.elf
 *.nacp
