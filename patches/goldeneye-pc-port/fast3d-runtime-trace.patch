@@ -1,0 +1,129 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 73d7df0..9c08af8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -48,7 +48,7 @@ endif()
+ # (port/src/romassets_<region>.s, see scripts/gen_romassets.py).
+ project(ge007 C CXX ASM)
+ if(GE_SWITCH)
+-  add_compile_definitions(PORT_DRAM_K0_BASE=0x60000000UL)
++  add_compile_definitions(PORT_DRAM_K0_BASE=0x60000000UL GE_FAST3D_TRACE=1)
+   add_compile_options($<$<COMPILE_LANGUAGE:C>:-Dstrtol=geN64Strtol>)
+ endif()
+ 
+diff --git a/port/fast3d/gfx_pc.cpp b/port/fast3d/gfx_pc.cpp
+index 7756786..3e4a740 100644
+--- a/port/fast3d/gfx_pc.cpp
++++ b/port/fast3d/gfx_pc.cpp
+@@ -354,12 +354,41 @@ static constexpr float clampf(const float x, const float min, const float max) {
+ 
+ /* #92 perf probe (GE_PERFSTAT=1): per-frame counters, see gfx_run. */
+ static uint64_t s_perf_batches = 0, s_perf_tris = 0;
++#ifdef GE_FAST3D_TRACE
++/* Bounded game-origin telemetry: record the first 128 non-empty RSP batches.
++ * No ROM bytes or complete vertex streams are written; only one transformed
++ * sample vertex and the batch's render-state identifiers are logged. */
++static uint64_t s_ge_trace_shader_id0;
++static uint32_t s_ge_trace_shader_id1;
++static uint8_t s_ge_trace_num_inputs;
++static uint8_t s_ge_trace_texture_mask;
++static unsigned s_ge_trace_batches;
++static unsigned s_ge_trace_frames;
++static unsigned s_ge_trace_current_frame;
++#endif
+ 
+ static void gfx_flush(void) {
+     if (buf_vbo_len > 0) {
+         s_perf_batches++;
+         s_perf_tris += buf_vbo_num_tris;
++#ifdef GE_FAST3D_TRACE
++        if (s_ge_trace_batches < 128) {
++            const size_t stride = buf_vbo_num_tris
++                ? buf_vbo_len / (buf_vbo_num_tris * 3u) : 0;
++            const float *v = buf_vbo;
++            fprintf(stderr,
++                "[GE_FAST3D_TRACE] source=fast3d-render-list frame=%u batch=%u shader=%016llx:%08x floats=%zu stride=%zu triangles=%zu inputs=%u textures=%u alpha=%u modulate=%u other_mode=%08x:%08x geometry=%08x v0=(%.6g,%.6g,%.6g,%.6g) attr0=(%.6g,%.6g,%.6g)\n",
++                s_ge_trace_current_frame, s_ge_trace_batches++,
++                (unsigned long long)s_ge_trace_shader_id0, s_ge_trace_shader_id1,
++                buf_vbo_len, stride, buf_vbo_num_tris, (unsigned)s_ge_trace_num_inputs,
++                (unsigned)s_ge_trace_texture_mask, (unsigned)rendering_state.alpha_blend,
++                (unsigned)rendering_state.modulate, rdp.other_mode_h, rdp.other_mode_l,
++                rsp.geometry_mode, v[0], v[1], v[2], v[3],
++                stride >= 7 ? v[4] : 0.f, stride >= 7 ? v[5] : 0.f,
++                stride >= 7 ? v[6] : 0.f);
++        }
++#endif
+         gfx_rapi->draw_triangles(buf_vbo, buf_vbo_len, buf_vbo_num_tris);
+         buf_vbo_len = 0;
+         buf_vbo_num_tris = 0;
+     }
+@@ -2506,4 +2535,12 @@ static void gfx_sp_othermode(void) {
+     if (depth_mode != rendering_state.depth_mode) {
+         gfx_flush();
++#ifdef GE_FAST3D_TRACE
++        static unsigned ge_trace_depth_events;
++        if (ge_trace_depth_events++ < 64) {
++            fprintf(stderr, "[GE_FAST3D_TRACE] source=depth-state test=%u update=%u compare=%u prim=%u zmode=%04x rdp=%08x:%08x geometry=%08x\n",
++                depth_test, depth_update, depth_compare, depth_source_prim, zmode,
++                rdp.other_mode_h, rdp.other_mode_l, rsp.geometry_mode);
++        }
++#endif
+         gfx_rapi->set_depth_mode(depth_test, depth_update, depth_compare, depth_source_prim, zmode);
+         rendering_state.depth_mode = depth_mode;
+@@ -2710,5 +2747,12 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bo
+                 bool linear_filter = (rdp.other_mode_h & (3U << G_MDSFT_TEXTFILT)) != G_TF_POINT;
+                 if (linear_filter != rendering_state.textures[i]->second.linear_filter ||
+                     cms != rendering_state.textures[i]->second.cms || cmt != rendering_state.textures[i]->second.cmt) {
+                     gfx_flush();
++#ifdef GE_FAST3D_TRACE
++                    static unsigned ge_trace_sampler_events;
++                    if (ge_trace_sampler_events++ < 64) {
++                        fprintf(stderr, "[GE_FAST3D_TRACE] source=sampler-state tile=%d linear=%u cms=%u cmt=%u mipmaps=%u\n",
++                            i, linear_filter, cms, cmt, rdp.tex_lod);
++                    }
++#endif
+                     gfx_rapi->set_sampler_parameters(i, linear_filter, cms, cmt, rdp.tex_lod);
+@@ -2849,6 +2893,16 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bo
+     if (prg != rendering_state.shader_program) {
+         gfx_flush();
++#ifdef GE_FAST3D_TRACE
++        s_ge_trace_shader_id0 = comb->shader_id0;
++        s_ge_trace_shader_id1 = comb->shader_id1 | (tm * SHADER_OPT_TEXEL0_CLAMP_S);
++        static unsigned ge_trace_shader_events;
++        if (ge_trace_shader_events++ < 64) {
++            fprintf(stderr, "[GE_FAST3D_TRACE] source=shader-state shader=%016llx:%08x textures=%u:%u alpha=%u modulate=%u\n",
++                (unsigned long long)s_ge_trace_shader_id0, s_ge_trace_shader_id1,
++                comb->used_textures[0], comb->used_textures[1], use_alpha, use_modulate);
++        }
++#endif
+         gfx_rapi->unload_shader(rendering_state.shader_program);
+         gfx_rapi->load_shader(prg);
+         rendering_state.shader_program = prg;
+     }
+@@ -2863,7 +2917,12 @@ static void gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bo
+     uint8_t num_inputs;
+     bool used_textures[2];
+ 
+     gfx_rapi->shader_get_info(prg, &num_inputs, used_textures);
++#ifdef GE_FAST3D_TRACE
++    s_ge_trace_num_inputs = num_inputs;
++    s_ge_trace_texture_mask = (used_textures[0] ? 1u : 0u) |
++                              (used_textures[1] ? 2u : 0u);
++#endif
+ 
+     struct GfxClipParameters clip_parameters = gfx_rapi->get_clip_parameters();
+ 
+@@ -4608,6 +4667,13 @@ static double s_perf_maxiv = 0, s_perf_maxiv_dl = 0, s_perf_maxiv_run = 0;
+ static uint64_t s_perf_maxiv_frame = 0, s_perf_over20 = 0, s_perf_over33 = 0;
+ 
+ extern "C" void gfx_run(Gfx* commands) {
++#ifdef GE_FAST3D_TRACE
++    s_ge_trace_current_frame = s_ge_trace_frames++;
++    if (s_ge_trace_current_frame < 64) {
++        fprintf(stderr, "[GE_FAST3D_TRACE] source=engine-display-list frame=%u commands=%p\n",
++                s_ge_trace_current_frame, (void *)commands);
++    }
++#endif
+     s_hud_scale = 1.0f;   /* D226: never carry a HUD scale across frames */
+     const uint64_t perf_t0 = gfx_perfstat_on() ? gfx_perf_now_ns() : 0;
+     ++num_dls;

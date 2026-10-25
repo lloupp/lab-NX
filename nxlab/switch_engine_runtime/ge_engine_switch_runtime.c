@@ -1,5 +1,6 @@
 #define GE_SWITCH_PLATFORM_TU 1
 #include "ge_switch_vm.h"
+#include "../fast3d/goldeneye_gfx_subset.h"
 #include <stdio.h>
 #include "hoststdlib.h"
 static unsigned char ram[0x800000] __attribute__((aligned(4096)));
@@ -30,18 +31,79 @@ void *geEngineLowStack(unsigned long size) {
 
 #include <sys/stat.h>
 #include <unistd.h>
+
+static bool geEngineFast3dSink(void *, const float *vbo, size_t floats,
+                               size_t triangles, const ge_fast3d_profile *profile)
+{
+    static ge_fast3d_vertex rgb_vertices[768];
+    static ge_fast3d_fogtex_vertex fogtex_vertices[768];
+    static unsigned conversion_events;
+    size_t vertices = 0;
+    ge_fast3d_result result;
+    if (profile->shader_id0 == 0x1000 && profile->shader_id1 == 0) {
+        result = ge_fast3d_unpack_rgb(vbo, floats, triangles, profile,
+                                      rgb_vertices, 768, &vertices);
+    } else if (profile->shader_id0 == GE_F3D_FOGTEX_RGB3_ID0 &&
+               profile->shader_id1 == GE_F3D_FOGTEX_RGB3_ID1) {
+        result = ge_fast3d_unpack_fogtex_rgb3(vbo, floats, triangles, profile,
+                                              fogtex_vertices, 768, &vertices);
+    } else {
+        return false;
+    }
+    if (conversion_events++ < 128) {
+        fprintf(stderr, "[GE_FAST3D_ADAPTER] cpu-conversion=%d profile=%016llx:%08x triangles=%lu vertices=%lu; GPU submit not wired\n",
+                result, (unsigned long long)profile->shader_id0, profile->shader_id1,
+                (unsigned long)triangles, (unsigned long)vertices);
+    }
+    return result == GE_F3D_OK;
+}
+
+static void geBootDebug(const char *stage, Result rc)
+{
+    char line[192];
+    int n = snprintf(line, sizeof line, "[GE_BOOT] stage=%s rc=%08x\n", stage, (unsigned)rc);
+    if (n > 0) (void)svcOutputDebugString(line, (u64)n);
+}
+
+static void geBootWrite(const char *path, const char *text)
+{
+    FILE *file = fopen(path, "w");
+    if (!file) return;
+    fputs(text, file);
+    fclose(file);
+}
+
 void geEngineBoot(void) {
-    fsdevMountSdmc();
-    mkdir("sdmc:/switch",0777);
-    mkdir("sdmc:/switch/lab-nx",0777);
-    mkdir("sdmc:/switch/lab-nx/goldeneye",0777);
-    mkdir("sdmc:/switch/lab-nx/goldeneye/data",0777);
-    chdir("sdmc:/switch/lab-nx/goldeneye");
-    freopen("engine.log","w",stderr);
-    freopen("engine-stdout.log","w",stdout);
+    char line[256];
+    Result mount = fsdevMountSdmc();
+    snprintf(line, sizeof line, "stage=mount rc=%08x\n", (unsigned)mount);
+    geBootDebug("mount", mount);
+    /* Write at the SD root before chdir so an unexpected cwd cannot hide
+     * guest entry. These markers are diagnostic only. */
+    geBootWrite("sdmc:/goldeneye-boot.log", line);
+    int mk_switch = mkdir("sdmc:/switch",0777);
+    int mk_lab = mkdir("sdmc:/switch/lab-nx",0777);
+    int mk_ge = mkdir("sdmc:/switch/lab-nx/goldeneye",0777);
+    int mk_data = mkdir("sdmc:/switch/lab-nx/goldeneye/data",0777);
+    geBootDebug("mkdirs", (Result)(unsigned)(mk_switch | mk_lab | mk_ge | mk_data));
+    snprintf(line, sizeof line, "stage=mount+mkdir rc=%08x mkdir=%d,%d,%d,%d\n",
+             (unsigned)mount, mk_switch, mk_lab, mk_ge, mk_data);
+    geBootWrite("sdmc:/switch/goldeneye-boot.log", line);
+    int chdir_rc = chdir("sdmc:/switch/lab-nx/goldeneye");
+    geBootDebug("chdir", (Result)chdir_rc);
+    FILE *engine = freopen("sdmc:/switch/lab-nx/goldeneye/engine.log","w",stderr);
+    FILE *stdout_log = freopen("sdmc:/switch/lab-nx/goldeneye/engine-stdout.log","w",stdout);
+    snprintf(line, sizeof line, "stage=files mount=%08x chdir=%d stderr=%p stdout=%p\n",
+             (unsigned)mount, chdir_rc, (void *)engine, (void *)stdout_log);
+    geBootWrite("sdmc:/switch/lab-nx/goldeneye/boot-early.log", line);
+    if (!engine || !stdout_log) geBootWrite("sdmc:/goldeneye-boot-error.log", line);
     setvbuf(stderr,NULL,_IONBF,0);
     setvbuf(stdout,NULL,_IONBF,0);
     fprintf(stderr,"Switch ARM64 full engine entry; target Dam; gameplay not confirmed\n");
+    if (!ge_gfx_subset_attach((ge_gfx_sink){NULL, geEngineFast3dSink}, 1280, 720))
+        fprintf(stderr,"[GE_FAST3D_ADAPTER] attach failed\n");
+    else
+        fprintf(stderr,"[GE_FAST3D_ADAPTER] attached for bounded engine-batch conversion; GPU submit not wired\n");
 }
 
 #include <pthread.h>

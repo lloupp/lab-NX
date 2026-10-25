@@ -1,0 +1,13 @@
+.git
+**/.git
+**/build*/
+**/romfs*/
+**/compile_commands.json
+**/*.nro
+**/*.nso
+**/*.elf
+**/*.nsp
+**/*.xci
+**/*.z64
+**/*.v64
+**/*.n64

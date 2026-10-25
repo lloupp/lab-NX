@@ -1,6 +1,8 @@
 name: GoldenEye native engine integration ARM64
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [feat/goldeneye-native-engine-integration]
   push:
     branches: [feat/goldeneye-native-engine-integration]
     paths:
@@ -13,6 +15,7 @@ on:
       - 'patches/**'
       - 'tests/native/test_goldeneye_fast3d_bridge.c'
       - 'tests/native/test_goldeneye_n64_memory.c'
+      - 'tests/native/test_goldeneye_n64_memory_compat.c'
       - 'tests/native/test_goldeneye_gfx_subset.cpp'
       - 'tests/native/test_eden_macro_cache.cpp'
       - '.github/workflows/goldeneye-native-integration.yml'
@@ -22,7 +25,9 @@ jobs:
   bridge-contract:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Compile and execute Fast3D bridge host tests
         run: |
           set -eux
@@ -39,6 +44,12 @@ jobs:
             -fno-omit-frame-pointer -I nxlab/native nxlab/native/goldeneye_n64_memory.c \
             tests/native/test_goldeneye_n64_memory.c -o /tmp/ge-memory
           /tmp/ge-memory
+      - name: Preserve d932006 DRAM and ROM memory API compatibility
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -I nxlab/native nxlab/native/goldeneye_n64_memory.c \
+            tests/native/test_goldeneye_n64_memory_compat.c -o /tmp/ge-memory-compat
+          /tmp/ge-memory-compat
       - name: Check real pinned upstream GfxRenderingAPI contract
         run: |
           git init -q upstream
@@ -71,13 +82,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Check original loader remains unchanged
         run: |
           test -s nxlab/switch_loader/source/main.c
           test -s nxlab/switch_deko_smoke/source/main.c
           test -s nxlab/native/goldeneye_fast3d_bridge.c
           test ! -f nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
+      - name: Build original GoldenEye Switch loader in pinned SDK
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work/nxlab/switch_loader \
+            -e DEVKITPRO=/opt/devkitpro devkitpro/devkita64:20260219 make -j2
       - name: Fetch pinned interface and compile the ordinary SDK baseline
         run: |
           git init -q upstream
@@ -85,13 +102,13 @@ jobs:
           git -C upstream fetch --depth=1 origin fda76b69837e6c5aae436e0d3e798989e49b06d2
           git -C upstream checkout --detach FETCH_HEAD
           docker run --rm -v "$PWD:/work" -w /work/nxlab/switch_deko_smoke \
-            -e DEVKITPRO=/opt/devkitpro devkitpro/devkita64:latest make -j2
+            -e DEVKITPRO=/opt/devkitpro devkitpro/devkita64:20260219 make -j2
       - name: Build independently uploaded MME entries and verify identical GPU RAM
         run: |
           docker run --rm \
             -v "$PWD:/work" -w /work \
             -e DEVKITPRO=/opt/devkitpro \
-            devkitpro/devkita64:latest bash -ec '
+            devkitpro/devkita64:20260219 bash -ec '
               apt-get update -qq
               DEBIAN_FRONTEND=noninteractive apt-get install -y -qq meson ninja-build flex bison
               python3 scripts/build_goldeneye_deko_compat.py --work-dir /tmp/ge-mme --upstream /work/upstream
@@ -99,6 +116,10 @@ jobs:
       - name: Verify generated assets and executable type
         run: |
           set -eux
+          test -s nxlab/switch_loader/goldeneye-nx-loader.elf
+          test -s nxlab/switch_loader/goldeneye-nx-loader.nro
+          readelf -h nxlab/switch_loader/goldeneye-nx-loader.elf | grep -E 'Machine:|Class:'
+          nm nxlab/switch_loader/build/goldeneye_n64_memory.o | grep ge_n64_memory_resolve
           test -s nxlab/switch_deko_smoke/goldeneye-deko-smoke.nro
           test -s nxlab/switch_deko_smoke/romfs/shaders/triangle_vsh.dksh
           test -s nxlab/switch_deko_smoke/romfs/shaders/color_fsh.dksh
@@ -111,7 +132,13 @@ jobs:
           nm nxlab/switch_deko_smoke/goldeneye-deko-mme.elf | grep ge_n64_memory_span
           strings nxlab/switch_deko_smoke/goldeneye-deko-smoke.elf |
             grep -E 'first-deko-frame-submitted|dksh-loaded|swapchain-created'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: goldeneye-switch-loader-arm64
+          path: |
+            nxlab/switch_loader/goldeneye-nx-loader.elf
+            nxlab/switch_loader/goldeneye-nx-loader.nro
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: goldeneye-deko3d-real-arm64-nro-and-dksh
           path: |
@@ -125,7 +152,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: goldeneye-deko3d-real-arm64-nro-and-dksh
           path: nro-dist
@@ -187,7 +214,7 @@ jobs:
           grep -qx 'n64-translated-arena-alias-verified' eden-evidence/guest_deko_trace.txt
           grep -qx 'gfx-rendering-api-subset-vbo-ready' eden-evidence/guest_deko_trace.txt
           echo 'Submission markers prove diagnostic execution; inspect captured pixels separately.'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: goldeneye-deko3d-eden-actual-execution
