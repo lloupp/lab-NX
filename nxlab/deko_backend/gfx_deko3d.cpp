@@ -53,6 +53,14 @@ struct DekoProgram {
     bool fogtex;
 };
 
+struct DekoTexture {
+    DkImage image;
+    DkMemBlock mem;
+    DkImageView view;
+    uint32_t width, height;
+    bool ready;
+};
+
 static struct {
     DkDevice device;
     DkSwapchain swapchain;
@@ -63,10 +71,21 @@ static struct {
     DkMemBlock code_mem;
     DkMemBlock vertex_mem;
     DkMemBlock cmd_mem;
+    DkMemBlock desc_mem;
+    DkImageDescriptor *image_desc;
+    DkSamplerDescriptor *sampler_desc;
+    DkGpuAddr image_desc_gpu;
+    DkGpuAddr sampler_desc_gpu;
+    DkSampler sampler;
+    uint32_t upload_id;
+    uint32_t selected_id;
+    DekoTexture textures[GE_DEKO_MAX_TEXTURES];
     DkCmdBuf cmd;
     DkQueue queue;
     DkShader vsh;
     DkShader fsh;
+    DkShader fogtex_vsh;
+    DkShader fogtex_fsh;
     DkImageView color_view;
     DkImageView depth_view;
     DkCmdList frame_cmd;
@@ -215,7 +234,9 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
         return false;
     }
     if (!deko_load_shader(&g.vsh, deko_triangle_vsh, deko_triangle_vsh_len) ||
-        !deko_load_shader(&g.fsh, deko_color_fsh, deko_color_fsh_len)) {
+        !deko_load_shader(&g.fsh, deko_color_fsh, deko_color_fsh_len) ||
+        !deko_load_shader(&g.fogtex_vsh, deko_fogtex_vsh, deko_fogtex_vsh_len) ||
+        !deko_load_shader(&g.fogtex_fsh, deko_fogtex_fsh, deko_fogtex_fsh_len)) {
         sysLogPrintf(LOG_ERROR, "deko3d: DKSH load failed");
         return false;
     }
@@ -230,6 +251,48 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
     }
 
     sysLogPrintf(LOG_NOTE, "deko3d: command memory %u bytes", (unsigned)GE_DEKO_CMD_BYTES);
+    const uint32_t image_desc_bytes = GE_DEKO_MAX_TEXTURES * (uint32_t)sizeof(DkImageDescriptor);
+    const uint32_t sampler_desc_bytes = GE_DEKO_MAX_TEXTURES * (uint32_t)sizeof(DkSamplerDescriptor);
+    sysLogPrintf(LOG_NOTE, "deko3d: descriptor memory");
+    uint32_t desc_size = image_desc_bytes + sampler_desc_bytes + 64;
+    desc_size = (desc_size + DK_MEMBLOCK_ALIGNMENT - 1u) & ~(DK_MEMBLOCK_ALIGNMENT - 1u);
+    dkMemBlockMakerDefaults(&memory_maker, g.device, desc_size);
+    memory_maker.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached;
+    g.desc_mem = dkMemBlockCreate(&memory_maker);
+    if (!g.desc_mem) {
+        sysLogPrintf(LOG_ERROR, "deko3d: descriptor memory failed");
+        return false;
+    }
+    {
+        uint8_t *desc_cpu = (uint8_t *)dkMemBlockGetCpuAddr(g.desc_mem);
+        uint8_t *desc_gpu = (uint8_t *)(uintptr_t)dkMemBlockGetGpuAddr(g.desc_mem);
+        sysLogPrintf(LOG_NOTE, "deko3d: descriptor block cpu=%p gpu=%p imgbytes=%u smpbytes=%u",
+                     (void *)desc_cpu, (void *)desc_gpu, (unsigned)image_desc_bytes,
+                     (unsigned)sampler_desc_bytes);
+        if (!desc_cpu) {
+            sysLogPrintf(LOG_ERROR, "deko3d: descriptor block has no CPU address");
+            return false;
+        }
+        const uintptr_t image_off = ((uintptr_t)desc_cpu + 31u) & ~(uintptr_t)31u;
+        g.image_desc = (DkImageDescriptor *)image_off;
+        g.image_desc_gpu = (DkGpuAddr)((uintptr_t)desc_gpu + (image_off - (uintptr_t)desc_cpu));
+        const uintptr_t sampler_off = (image_off + image_desc_bytes + 31u) & ~(uintptr_t)31u;
+        g.sampler_desc = (DkSamplerDescriptor *)sampler_off;
+        g.sampler_desc_gpu = (DkGpuAddr)((uintptr_t)desc_gpu + (sampler_off - (uintptr_t)desc_cpu));
+        dkSamplerDefaults(&g.sampler);
+        g.sampler.minFilter = DkFilter_Linear;
+        g.sampler.magFilter = DkFilter_Linear;
+        g.sampler.wrapMode[0] = DkWrapMode_Repeat;
+        g.sampler.wrapMode[1] = DkWrapMode_Repeat;
+        g.sampler.wrapMode[2] = DkWrapMode_Repeat;
+        sysLogPrintf(LOG_NOTE, "deko3d: image_desc=%p sampler_desc=%p img_gpu=%llx smp_gpu=%llx",
+                     (void *)g.image_desc, (void *)g.sampler_desc,
+                     (unsigned long long)g.image_desc_gpu, (unsigned long long)g.sampler_desc_gpu);
+        dkSamplerDescriptorInitialize(&g.sampler_desc[0], &g.sampler);
+        sysLogPrintf(LOG_NOTE, "deko3d: sampler descriptor initialized");
+    }
+
+    sysLogPrintf(LOG_NOTE, "deko3d: command memblock create");
     dkMemBlockMakerDefaults(&memory_maker, g.device, GE_DEKO_CMD_BYTES);
     memory_maker.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached;
     g.cmd_mem = dkMemBlockCreate(&memory_maker);
@@ -393,36 +456,103 @@ static void deko_shader_info(struct ShaderProgram *program, uint8_t *num_inputs,
 
 static void deko_clear_shaders(void) { g.current = nullptr; }
 
+static DkWrapMode deko_wrap_mode(uint32_t mode)
+{
+    switch (mode & 3u) {
+    case 1: return DkWrapMode_MirroredRepeat;
+    case 2: return DkWrapMode_ClampToEdge;
+    case 3: return DkWrapMode_MirrorClampToEdge;
+    default: return DkWrapMode_Repeat;
+    }
+}
+
 static uint32_t deko_new_texture(void)
 {
     if (g.next_texture >= GE_DEKO_MAX_TEXTURES) {
         return 0;
     }
-    return ++g.next_texture;
+    const uint32_t id = ++g.next_texture;
+    g.upload_id = id;
+    g.selected_id = id;
+    return id;
 }
 
 static void deko_select_texture(int tile, uint32_t texture_id, bool linear_filter)
 {
     (void)tile;
-    (void)texture_id;
     (void)linear_filter;
+    if (texture_id > 0 && texture_id <= GE_DEKO_MAX_TEXTURES) {
+        g.selected_id = texture_id;
+    }
 }
 
 static void deko_upload_texture(const uint8_t *rgba32, uint32_t width, uint32_t height, bool gen_mipmaps)
 {
-    (void)rgba32;
-    (void)width;
-    (void)height;
     (void)gen_mipmaps;
+    const uint32_t id = g.upload_id;
+    if (!rgba32 || !width || !height || id == 0 || id > GE_DEKO_MAX_TEXTURES) {
+        return;
+    }
+    DekoTexture &tex = g.textures[id - 1];
+    if (tex.mem) {
+        dkMemBlockDestroy(tex.mem);
+        tex.mem = nullptr;
+        tex.ready = false;
+    }
+    DkImageLayoutMaker lm;
+    dkImageLayoutMakerDefaults(&lm, g.device);
+    lm.flags = DkImageFlags_PitchLinear;
+    lm.format = DkImageFormat_RGBA8_Unorm;
+    lm.dimensions[0] = width;
+    lm.dimensions[1] = height;
+    const uint32_t stride = (width * 4u + DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1u)
+                          & ~(DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1u);
+    lm.pitchStride = stride;
+    DkImageLayout layout;
+    dkImageLayoutInitialize(&layout, &lm);
+    uint64_t size = dkImageLayoutGetSize(&layout);
+    const uint32_t align = dkImageLayoutGetAlignment(&layout);
+    size = (size + align - 1u) & ~(uint64_t)(align - 1u);
+    size = (size + DK_MEMBLOCK_ALIGNMENT - 1u) & ~(uint64_t)(DK_MEMBLOCK_ALIGNMENT - 1u);
+    DkMemBlockMaker mm;
+    dkMemBlockMakerDefaults(&mm, g.device, (uint32_t)size);
+    mm.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached | DkMemBlockFlags_Image;
+    tex.mem = dkMemBlockCreate(&mm);
+    if (!tex.mem) {
+        sysLogPrintf(LOG_ERROR, "deko3d: texture memory failed %ux%u", width, height);
+        return;
+    }
+    uint8_t *cpu = (uint8_t *)dkMemBlockGetCpuAddr(tex.mem);
+    if (!cpu) {
+        dkMemBlockDestroy(tex.mem);
+        tex.mem = nullptr;
+        return;
+    }
+    for (uint32_t row = 0; row < height; ++row) {
+        memcpy(cpu + (size_t)row * stride, rgba32 + (size_t)row * width * 4u, (size_t)width * 4u);
+    }
+    dkImageInitialize(&tex.image, &layout, tex.mem, 0);
+    dkImageViewDefaults(&tex.view, &tex.image);
+    tex.width = width;
+    tex.height = height;
+    tex.ready = true;
+    dkImageDescriptorInitialize(&g.image_desc[id - 1], &tex.view, false, false);
+    static unsigned logged;
+    if (logged++ < 8) {
+        sysLogPrintf(LOG_NOTE, "deko3d: texture %u uploaded %ux%u", id, width, height);
+    }
 }
 
 static void deko_sampler_parameters(int sampler, bool linear_filter, uint32_t cms, uint32_t cmt, bool mipmaps)
 {
     (void)sampler;
-    (void)linear_filter;
-    (void)cms;
-    (void)cmt;
     (void)mipmaps;
+    g.sampler.minFilter = linear_filter ? DkFilter_Linear : DkFilter_Nearest;
+    g.sampler.magFilter = linear_filter ? DkFilter_Linear : DkFilter_Nearest;
+    g.sampler.wrapMode[0] = deko_wrap_mode(cms);
+    g.sampler.wrapMode[1] = deko_wrap_mode(cmt);
+    g.sampler.wrapMode[2] = DkWrapMode_Repeat;
+    dkSamplerDescriptorInitialize(&g.sampler_desc[0], &g.sampler);
 }
 
 static void deko_depth_mode(bool test, bool update, bool compare, bool prim, uint16_t zmode)
@@ -504,6 +634,36 @@ static void deko_stage_vertex(const void *data, size_t bytes, uint32_t stride,
     g.draws++;
 }
 
+static void deko_stage_fogtex(const ge_fast3d_fogtex_vertex *data, size_t vertices)
+{
+    const size_t bytes = vertices * sizeof(*data);
+    const size_t aligned = (g.vertex_used + 3u) & ~(size_t)3u;
+    if (aligned + bytes > GE_DEKO_VERTEX_BYTES) {
+        g.skipped++;
+        return;
+    }
+    uint8_t *dst = (uint8_t *)dkMemBlockGetCpuAddr(g.vertex_mem) + aligned;
+    memcpy(dst, data, bytes);
+    const DkGpuAddr gpu = dkMemBlockGetGpuAddr(g.vertex_mem) + aligned;
+    DkBufExtents extents = {gpu, bytes};
+    dkCmdBufBindVtxBuffers(g.cmd, 0, &extents, 1);
+    const uint32_t stride = (uint32_t)sizeof(ge_fast3d_fogtex_vertex);
+    DkVtxAttribState attribs[6] = {
+        {0, 0, (uint32_t)offsetof(ge_fast3d_fogtex_vertex, position), DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
+        {0, 0, (uint32_t)offsetof(ge_fast3d_fogtex_vertex, texcoord), DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
+        {0, 0, (uint32_t)offsetof(ge_fast3d_fogtex_vertex, fog), DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
+        {0, 0, (uint32_t)offsetof(ge_fast3d_fogtex_vertex, input_rgb) + 0u, DkVtxAttribSize_3x32, DkVtxAttribType_Float, 0},
+        {0, 0, (uint32_t)offsetof(ge_fast3d_fogtex_vertex, input_rgb) + 12u, DkVtxAttribSize_3x32, DkVtxAttribType_Float, 0},
+        {0, 0, (uint32_t)offsetof(ge_fast3d_fogtex_vertex, input_rgb) + 24u, DkVtxAttribSize_3x32, DkVtxAttribType_Float, 0},
+    };
+    DkVtxBufferState buffers[1] = {{stride, 0}};
+    dkCmdBufBindVtxAttribState(g.cmd, attribs, 6);
+    dkCmdBufBindVtxBufferState(g.cmd, buffers, 1);
+    dkCmdBufDraw(g.cmd, DkPrimitive_Triangles, (uint32_t)vertices, 1, 0, 0);
+    g.vertex_used = aligned + bytes;
+    g.draws++;
+}
+
 static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
 {
     static unsigned debug_draws;
@@ -552,9 +712,18 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
                              g.sc_x, g.sc_y, g.sc_w, g.sc_h);
             }
         }
-        deko_stage_vertex(scratch, written * sizeof(*scratch), sizeof(*scratch),
-                          (uint32_t)offsetof(ge_fast3d_fogtex_vertex, input_rgb),
-                          (uint32_t)written);
+        DkShader const *shaders[2] = {&g.fogtex_vsh, &g.fogtex_fsh};
+        dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
+        const uint32_t texture_id = g.selected_id;
+        if (texture_id == 0 || texture_id > GE_DEKO_MAX_TEXTURES ||
+            !g.textures[texture_id - 1].ready) {
+            free(scratch);
+            g.skipped++;
+            return;
+        }
+        dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0,
+                            dkMakeTextureHandle(texture_id - 1, 0));
+        deko_stage_fogtex(scratch, written);
         free(scratch);
         return;
     }
@@ -571,6 +740,8 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         g.skipped++;
         return;
     }
+    DkShader const *shaders[2] = {&g.vsh, &g.fsh};
+    dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
     deko_stage_vertex(scratch, written * sizeof(*scratch), sizeof(*scratch),
                       (uint32_t)offsetof(ge_fast3d_vertex, rgb), (uint32_t)written);
     free(scratch);
@@ -597,14 +768,14 @@ static void deko_api_start_frame(void)
     g.vertex_used = 0;
     g.draws = 0;
     g.skipped = 0;
+    dkCmdBufBindImageDescriptorSet(g.cmd, g.image_desc_gpu, GE_DEKO_MAX_TEXTURES);
+    dkCmdBufBindSamplerDescriptorSet(g.cmd, g.sampler_desc_gpu, GE_DEKO_MAX_TEXTURES);
 
     DkImageView color_view;
     dkImageViewDefaults(&color_view, &g.images[g.slot]);
     g.color_view = color_view;
     dkCmdBufBindRenderTarget(g.cmd, &g.color_view, &g.depth_view);
     deko_apply_states();
-    DkShader const *shaders[] = {&g.vsh, &g.fsh};
-    dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
     dkCmdBufClearColorFloat(g.cmd, 0, DkColorMask_RGBA, 0.04f, 0.05f, 0.08f, 1.0f);
     dkCmdBufClearDepthStencil(g.cmd, true, 1.0f, 0, 0);
 }
@@ -669,7 +840,16 @@ static void *deko_framebuffer_texture(int fb_id)
 }
 
 static void deko_select_framebuffer_texture(int fb_id) { (void)fb_id; }
-static void deko_delete_texture(uint32_t texture_id) { (void)texture_id; }
+static void deko_delete_texture(uint32_t texture_id)
+{
+    if (texture_id == 0 || texture_id > GE_DEKO_MAX_TEXTURES) return;
+    DekoTexture &tex = g.textures[texture_id - 1];
+    if (tex.mem) {
+        dkMemBlockDestroy(tex.mem);
+        tex.mem = nullptr;
+        tex.ready = false;
+    }
+}
 static void deko_set_filter(FilteringMode mode) { (void)mode; }
 static FilteringMode deko_get_filter(void) { return FILTER_NONE; }
 static void deko_set_mipmap(MipmapFilteringMode mode) { (void)mode; }

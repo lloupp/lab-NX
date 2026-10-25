@@ -1,4 +1,4 @@
-# GoldenEye NX — deko3d backend, stage 1 (2026-10-25)
+# GoldenEye NX — deko3d backend, stages 1–2 (2026-10-25)
 
 ## What this is
 
@@ -22,25 +22,30 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   described by `nxlab/native/goldeneye_fast3d_bridge.h`:
   - `SHADE RGB` (`0x1000:0`), 7 floats/vertex;
   - `FOGTEX RGB3` (`d000030d12181218:00000012`), 19 floats/vertex.
+- Stage 2 adds RGBA8 texture uploads (pitch-linear deko images), image and
+  sampler descriptor sets, and a FOGTEX fragment shader implementing
+  `mix(INPUT_1, TEXEL0, INPUT_2) * INPUT_3` with per-vertex fog. Textured
+  characters now render; the texture run uploaded textures 1–8 and recorded
+  about **165 draws / 105 skips per frame**.
 - Depth (`Z24S8`, `LEQUAL`) and a clamped scissor: Fast3D can pass negative
   scissor rectangles, and `DkScissor` is unsigned, so the rectangle is clamped
   to the framebuffer before recording.
-- In the final Dam run the backend records about **63 draws and 92 skips per
-  frame**. `deko3d: frame N presented draws=... skipped=...` reports the
-  split; skipped batches use combiner profiles that are not implemented yet.
+- `deko3d: frame N presented draws=... skipped=...` reports the split.
+  Skipped batches use the 2-texture environment combiner profiles
+  (`1000020d0000818a:13`, `320d020d818a818a:12`, `020d020d818a818a:13`,
+  `d000d00010001000:13`), which are not implemented yet.
 
 ## What is not implemented
 
-- **Textures.** `new_texture`/`upload_texture`/`select_texture`/
-  `set_sampler_parameters` are accepted but do not create or bind deko
-  images. Both supported profiles therefore draw with their first RGB input
-  only. Most Dam geometry is textured, so the rendered geometry is near-black
-  on the dark clear colour.
-- **Combiner shaders.** One fixed DKSH pair (clip position + RGB) is used for
-  both profiles. The other observed combiners
+- **Environment profiles.** The 2-texture profiles
   (`1000020d0000818a:13`, `320d020d818a818a:12`, `020d020d818a818a:13`,
-  `d000d00010001000:13`, …) keep the engine's VBO layout for
-  `shader_get_info` but are not drawn.
+  `d000d00010001000:13`) keep the engine's VBO layout for `shader_get_info`
+  but are not drawn. Their layout is `pos4, tex0 uv2, tex1 uv2, fog4,
+  inputs` where each input is 3 floats (or 4 with the alpha option); a
+  generic unpacker and a `mix(TEXEL0, TEXEL1, INPUT_1) * INPUT_2` shader are
+  the next step. The Dam background is therefore still missing.
+- **Alpha and clamp variants.** `use_alpha` VBOs (4 floats per input) and the
+  clamp-S/T texcoord extras are not parsed yet.
 - MSAA is forced to 1; the two-step GL resolve is not used by this backend.
 - The `different_size` render path is not exercised.
 - One command buffer and one vertex block are reused; the backend calls
@@ -70,16 +75,19 @@ the backend and compiles the two DKSH programs with `uam`. Without
 
 ## Evidence
 
-Verification NRO: 8,298,552 bytes, SHA-256
-`47e25263c078be7fd9797aad2f229a3c5c3f4dd21da9e7a0837e6a47bc6134d9`.
+Verification NRO (stage 2): 8,306,744 bytes, SHA-256
+`4f5f42fb37eb3a452f9852da9f7f9fa18150aec76131c4e84d09bfcaa39edaf5`.
 Patched deko3d: SHA-256
 `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
 
 Raw runs and the NRO are preserved outside Git in
 `007/goldeneye-deko-backend-20261025/`:
 
-- `run-20261025-133105-xtest/`: production backend, Dam frame, 2-colour
-  screenshot (clear + black geometry) and draw/skip counts.
+- `run-20261025-145258-xtest/`: stage-2 texture run with
+  `stage2-textured-characters.png` and the engine log (8 texture uploads,
+  ~165 draws/105 skips).
+- `run-20261025-133105-xtest/`: stage-1 run, 2-colour screenshot and
+  draw/skip counts.
 - `diagnostic-triangle-and-game-silhouettes.png`: a temporary build with the
   synthetic clip-space triangle and depth disabled, showing the same deko
   pipeline drawing both the diagnostic triangle and the engine's Bond/guard
@@ -88,10 +96,9 @@ Raw runs and the NRO are preserved outside Git in
 
 ## Next steps
 
-1. Texture path: deko images + descriptors + a DKSH fragment shader with a
-   sampler; wire `upload_texture`/`select_texture`/`set_sampler_parameters`.
-2. Combiner shaders for the profiles observed in the Dam trace, using
-   `gfx_cc_get_features` data to pick the fixed shader.
-3. Depth/z validation and, later, MSAA and command-buffer double buffering.
-4. A CI job that builds the patched deko3d and the engine backend; the
+1. Generic canonical vertex + unpacker for the 2-texture profiles, with
+   `use_alpha` and clamp extras; a `mix(TEXEL0, TEXEL1, INPUT_1) * INPUT_2`
+   fragment shader and two texture bindings.
+2. Depth/z validation and, later, MSAA and command-buffer double buffering.
+3. A CI job that builds the patched deko3d and the engine backend; the
    current workflows only build the GL engine.
