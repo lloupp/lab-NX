@@ -1,4 +1,4 @@
-# deko3d backend, stages 1–3, in the full engine — 2026-10-25
+# deko3d backend, stages 1–4, in the full engine — 2026-10-25
 
 ## Result
 
@@ -15,14 +15,21 @@ the facility are visible in `stage3-full-dam-textured.png`.
   2-texture profiles and an environment shader
   `mix(TEXEL0, TEXEL1, INPUT_1) * INPUT_2` with fog. The Dam run records
   about **139–148 draws and 14 skips per frame** (8 textures uploaded).
+- **Stage 4:** exact alpha modes per profile — opaque for
+  `1000020d…:13`/`320d020d…:12`/FOGTEX, `mix(t0.a,t1.a,in0.a)*in1.a` for
+  `color_alpha_same` profiles (`020d020d…:13`), and a flat white shader for
+  the no-texture `d000d00010001000:13` profile. The Dam aerial view renders
+  through deko3d (`stage4-alpha-combiner-dam.png`).
 
 ## Evidence
 
-- Stage-3 NRO: 8,306,744 bytes, SHA-256
-  `7133c1d08df03fce8c58bfb8e48b5da93b8c2a334057c725dc1443bd9f2af30d`.
+- Stage-4 NRO: 8,314,936 bytes, SHA-256
+  `9898f76e5c149fa6f541df0b7daba91684ac8710784e42117cbfe23df4e153c0`.
 - Patched deko3d (dekotools MME upload): SHA-256
   `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
   The stock devkitPro `libdeko3d.a` fails at `dkQueueCreate` in Eden.
+- `stage4-alpha-combiner-dam.png`: the Dam aerial view rendered by the
+  deko3d backend with the stage-4 alpha modes.
 - `stage3-full-dam-textured.png`: the Dam exterior rendered by the deko3d
   backend (1280x720 host screenshot).
 - `stage2-textured-characters.png`, the stage-1 runs and the diagnostic
@@ -46,9 +53,9 @@ See `docs/GOLDENEYE_DEKO_BACKEND_STAGE1.md` for architecture and next steps.
 
 ## Remaining work
 
-- Alpha/combiner parity: alpha is approximated with `tex0.a`; some flat
-  roof/fan surfaces still shade incorrectly.
-- No-texture combiner variants (`d000d00010001000:13`) are skipped.
+- Remaining combiner paths: texture-edge (`opt_texture_edge`), noise, exact
+  clamp-S/T handling; a black shape at the top of the aerial frame is still
+  unexplained.
 - MSAA is forced to 1; the `different_size` path is not exercised.
 - Input, audio and mission completion were not re-validated under the deko
   backend; the GL path remains the reference.

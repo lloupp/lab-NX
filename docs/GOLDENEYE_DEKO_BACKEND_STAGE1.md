@@ -1,4 +1,4 @@
-# GoldenEye NX — deko3d backend, stages 1–3 (2026-10-25)
+# GoldenEye NX — deko3d backend, stages 1–4 (2026-10-25)
 
 ## What this is
 
@@ -32,6 +32,11 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   `mix(TEXEL0, TEXEL1, INPUT_1) * INPUT_2` with fog. The Dam exterior now
   renders through deko3d; the stage-3 run records about **139–148 draws and
   14 skips per frame**.
+- Stage 4 adds exact alpha modes per profile: opaque for
+  `1000020d…:13`/`320d020d…:12`/FOGTEX, `mix(t0.a,t1.a,in0.a)*in1.a` for
+  `color_alpha_same` profiles (`020d020d…:13`), and a flat white shader for
+  the no-texture `d000d00010001000:13` profile. The Dam aerial view renders
+  through deko3d.
 - Depth (`Z24S8`, `LEQUAL`) and a clamped scissor: Fast3D can pass negative
   scissor rectangles, and `DkScissor` is unsigned, so the rectangle is clamped
   to the framebuffer before recording.
@@ -77,14 +82,16 @@ the backend and compiles the two DKSH programs with `uam`. Without
 
 ## Evidence
 
-Verification NRO (stage 3): 8,306,744 bytes, SHA-256
-`7133c1d08df03fce8c58bfb8e48b5da93b8c2a334057c725dc1443bd9f2af30d`.
+Verification NRO (stage 4): 8,314,936 bytes, SHA-256
+`9898f76e5c149fa6f541df0b7daba91684ac8710784e42117cbfe23df4e153c0`.
 Patched deko3d: SHA-256
 `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
 
 Raw runs and the NRO are preserved outside Git in
 `007/goldeneye-deko-backend-20261025/`:
 
+- `run-20261025-172002-xtest/`: stage-4 Dam aerial view with
+  `stage4-alpha-combiner-dam.png` and the engine log.
 - `run-20261025-162838-xtest/`: stage-3 full Dam exterior with
   `stage3-full-dam-textured.png` and the engine log (8 texture uploads,
   ~139–148 draws/14 skips).
@@ -100,8 +107,9 @@ Raw runs and the NRO are preserved outside Git in
 
 ## Next steps
 
-1. Alpha/combiner parity for the remaining surfaces; no-texture combiner
-   variants.
+1. Remaining combiner paths: texture-edge (`opt_texture_edge`), noise,
+   exact clamp-S/T handling; check the black shape at the top of the aerial
+   frame.
 2. Depth/z validation and, later, MSAA and command-buffer double buffering.
 3. A CI job that builds the patched deko3d and the engine backend; the
    current workflows only build the GL engine.

@@ -52,6 +52,8 @@ struct DekoProgram {
     bool supported;
     bool fogtex;
     bool env2tex;
+    bool flat;
+    bool alpha_combiner;
 };
 
 struct DekoTexture {
@@ -89,6 +91,9 @@ static struct {
     DkShader fogtex_fsh;
     DkShader env_vsh;
     DkShader env_fsh;
+    DkShader env_alpha_fsh;
+    DkShader flat_vsh;
+    DkShader flat_fsh;
     DkImageView color_view;
     DkImageView depth_view;
     DkCmdList frame_cmd;
@@ -241,7 +246,10 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
         !deko_load_shader(&g.fogtex_vsh, deko_fogtex_vsh, deko_fogtex_vsh_len) ||
         !deko_load_shader(&g.fogtex_fsh, deko_fogtex_fsh, deko_fogtex_fsh_len) ||
         !deko_load_shader(&g.env_vsh, deko_env2tex_vsh, deko_env2tex_vsh_len) ||
-        !deko_load_shader(&g.env_fsh, deko_env2tex_fsh, deko_env2tex_fsh_len)) {
+        !deko_load_shader(&g.env_fsh, deko_env2tex_fsh, deko_env2tex_fsh_len) ||
+        !deko_load_shader(&g.env_alpha_fsh, deko_env2tex_alpha_fsh, deko_env2tex_alpha_fsh_len) ||
+        !deko_load_shader(&g.flat_vsh, deko_flat_vsh, deko_flat_vsh_len) ||
+        !deko_load_shader(&g.flat_fsh, deko_flat_fsh, deko_flat_fsh_len)) {
         sysLogPrintf(LOG_ERROR, "deko3d: DKSH load failed");
         return false;
     }
@@ -414,12 +422,19 @@ static struct ShaderProgram *deko_create_shader(uint64_t id0, uint32_t id1)
     program->fogtex = (id0 == GE_F3D_FOGTEX_RGB3_ID0 && id1 == GE_F3D_FOGTEX_RGB3_ID1);
     program->env2tex = !program->fogtex && features.used_textures[0] &&
                        features.used_textures[1] && features.num_inputs >= 2;
-    program->supported = (id0 == 0x1000u && id1 == 0u) || program->fogtex || program->env2tex;
+    program->flat = !features.used_textures[0] && !features.used_textures[1] &&
+                    features.num_inputs == 1 && features.opt_alpha;
+    program->alpha_combiner = program->env2tex && features.opt_alpha &&
+        features.color_alpha_same[1] &&
+        !(features.do_single[1][1] && features.c[1][1][3] == SHADER_1);
+    program->supported = (id0 == 0x1000u && id1 == 0u) || program->fogtex ||
+                         program->env2tex || program->flat;
     if (g.programs <= 8 || program->supported) {
-        sysLogPrintf(LOG_NOTE, "deko3d: shader %016llx:%08x inputs=%u tex=%u:%u fogtex=%d env=%d supported=%d",
+        sysLogPrintf(LOG_NOTE, "deko3d: shader %016llx:%08x inputs=%u tex=%u:%u fogtex=%d env=%d flat=%d ac=%d supported=%d",
                      (unsigned long long)id0, id1, program->num_inputs,
                      program->used_textures[0] ? 1u : 0u, program->used_textures[1] ? 1u : 0u,
                      program->fogtex ? 1 : 0, program->env2tex ? 1 : 0,
+                     program->flat ? 1 : 0, program->alpha_combiner ? 1 : 0,
                      program->supported ? 1 : 0);
     }
     return deko_as_handle(program);
@@ -767,6 +782,28 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         free(scratch);
         return;
     }
+    if (g.current->flat) {
+        ge_fast3d_profile profile = {1, 0, 1, 1, 0, g.current->id0, g.current->id1};
+        size_t written = 0;
+        ge_fast3d_generic_vertex *scratch =
+            (ge_fast3d_generic_vertex *)malloc(vertices * sizeof(*scratch));
+        if (!scratch) {
+            g.skipped++;
+            return;
+        }
+        if (ge_fast3d_unpack_generic(vbo, vbo_len, triangles, &profile, scratch,
+                                     vertices, &written) != GE_F3D_OK ||
+            written != vertices) {
+            free(scratch);
+            g.skipped++;
+            return;
+        }
+        DkShader const *shaders[2] = {&g.flat_vsh, &g.flat_fsh};
+        dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
+        deko_stage_generic(scratch, written);
+        free(scratch);
+        return;
+    }
     if (g.current->env2tex) {
         ge_fast3d_profile profile = {
             g.current->num_inputs,
@@ -798,7 +835,8 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
             g.skipped++;
             return;
         }
-        DkShader const *shaders[2] = {&g.env_vsh, &g.env_fsh};
+        DkShader const *shaders[2] = {&g.env_vsh,
+            g.current->alpha_combiner ? &g.env_alpha_fsh : &g.env_fsh};
         dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
         dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0, dkMakeTextureHandle(t0 - 1, 0));
         dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 1, dkMakeTextureHandle(t1 - 1, 1));
