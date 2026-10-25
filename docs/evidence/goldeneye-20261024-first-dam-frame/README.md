@@ -21,22 +21,16 @@ game-origin geometry, not a synthetic fixture.
 ## Root cause of the black presentation
 
 With the default `MSAA = 2`, the engine renders the scene into a multisample
-FBO and depends on the resolve/composite path to reach the default
-framebuffer. On the Switch Mesa 20.1 nouveau path that resolve does not
-present: the guest back buffer remains fully black while the engine continues
-to render.
+FBO and the direct resolve to the default framebuffer is silently dropped on
+the Switch Mesa 20.1 nouveau path: the guest back buffer remains fully black
+while the engine continues to render.
 
-Forcing `MSAA = 1` makes the engine render directly to the default
-framebuffer. The Dam scene appears immediately. The repository now applies
-`patches/goldeneye-pc-port/switch-msaa-default.patch`, which forces 1x on
-Switch and logs:
-
-```text
-[WARN ] video: Switch MSAA resolve path unsupported; forcing MSAA=1 (requested 2)
-```
-
-This is a workaround; the multisample resolve path still needs a proper fix
-before MSAA can be enabled on Switch.
+Forcing `MSAA = 1` made the engine render directly to the default framebuffer,
+so the Dam scene appeared. That workaround was superseded on 2026-10-25: the
+direct multisample-to-window blit is the broken step, and resolving into an
+ordinary texture FBO first then blitting that texture to the window presents
+correctly. See `patches/goldeneye-pc-port/switch-msaa-resolve.patch` and
+`docs/evidence/goldeneye-20261025-input-msaa/README.md`.
 
 ## Evidence frames
 
@@ -54,22 +48,16 @@ no ROM, sidecar, NRO or game frame is added to Git.
 
 ## Input status
 
-Controller injection was not proven in this environment. The Eden CLI
-frontend boots the NRO reliably and the game window receives X focus, but
-`xdotool` keyboard events do not reach the guest's emulated controller (the
-HUD ammo and Start/pause state do not change). The GUI frontend, which
-implements keyboard mapping, did not load the NRO from its game list or from
-the `-g`/positional path in these fresh profiles.
-
-This is an emulator-harness input gap, not a rendering failure. The game is
-displaying the first-person Dam gameplay view with a live HUD; physical
-controller input remains to be validated on real Switch hardware or through
-a working Eden input path (TAS, UDP input, or the GUI once its game list is
-populated).
+Controller injection was not proven in that session. The Eden CLI frontend
+booted the NRO and the game window received X focus, but `xdotool keydown
+--window` uses XSendEvent, which SDL2 ignores, so the emulated controller
+never changed. On 2026-10-25 the same frontend accepted XTEST events sent to
+the PID-selected focused window: Start opened the Q Watch and the up arrow
+moved Bond. Physical-Switch input remains to be validated.
 
 ## Reproduction
 
-1. Build with the MSAA patch:
+1. Build with the current patch set (including the MSAA resolve):
 
    ```sh
    source scripts/devkitpro-env.sh
@@ -95,8 +83,9 @@ populated).
 
 ## Limits
 
-- MSAA is forced to 1; the multisample resolve is still unwired on Switch.
-- Input, audio interaction, mission completion and physical-Switch execution
-  are not validated.
+- MSAA resolves through the two-step Switch path; 1x/2x/4x verified, 8x/16x
+  and the `different_size` path are not.
+- Audio interaction, mission completion and physical-Switch execution are not
+  validated.
 - The engine still uses Fast3D/Mesa/nouveau; the full deko3d backend remains
   unwired.

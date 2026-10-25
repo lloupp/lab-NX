@@ -52,7 +52,7 @@ def main():
         run("git", "-C", source, "checkout", "--detach", PIN)
     run("git", "apply", "--check", ROOT / "patches/goldeneye-pc-port/switch-platform.patch", cwd=source)
     run("git", "apply", ROOT / "patches/goldeneye-pc-port/switch-platform.patch", cwd=source)
-    msaa_patch = ROOT / "patches/goldeneye-pc-port/switch-msaa-default.patch"
+    msaa_patch = ROOT / "patches/goldeneye-pc-port/switch-msaa-resolve.patch"
     run("git", "apply", "--check", msaa_patch, cwd=source)
     run("git", "apply", msaa_patch, cwd=source)
     trace_patch = ROOT / "patches/goldeneye-pc-port/fast3d-runtime-trace.patch"

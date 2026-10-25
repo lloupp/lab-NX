@@ -133,24 +133,52 @@ view with Bond's pistol and the ammo HUD (`7 | 93`). The final NRO is
 engine has run 2,700+ frames in a longer session and 1,200+ frames in the
 MSAA-fix run, at roughly 20-50 ms per frame.
 
-The black presentation was caused by the default `MSAA = 2` path: the scene
-renders into a multisample FBO and the resolve/composite to the default
-framebuffer does not present on the Switch Mesa 20.1 nouveau path. Forcing
-`MSAA = 1` renders directly to the default framebuffer and the Dam scene
-appears. `patches/goldeneye-pc-port/switch-msaa-default.patch` now forces 1x
-on Switch with a warning; the multisample resolve still needs a proper fix.
+The black presentation at the time came from the default `MSAA = 2` path: the
+scene rendered into a multisample FBO and the direct resolve to the default
+framebuffer was silently dropped on the Switch Mesa 20.1 nouveau path. The
+temporary `MSAA = 1` workaround was superseded on 2026-10-25 by the two-step
+resolve in `patches/goldeneye-pc-port/switch-msaa-resolve.patch` (see the
+input/MSAA section below).
 
-Controller injection was not proven in this environment. Eden's CLI frontend
-boots the NRO and the game window has X input focus, but keyboard events do
-not reach the guest's emulated controller; the GUI frontend did not load the
-NRO from its game list. The first-person Dam gameplay view and HUD are
-rendered, but physical input, mission completion and physical-Switch
-execution remain unvalidated.
+Controller injection was not proven in that session: the harness used
+XSendEvent, which SDL2 ignores. On 2026-10-25 XTEST with a PID-selected,
+focused Eden window reached the guest controller (Start opens the Q Watch and
+the left stick moves Bond); see below. Physical-Switch execution and mission
+completion remain unvalidated.
 
 Evidence summary:
 `docs/evidence/goldeneye-20261024-first-dam-frame/README.md`. The raw engine
 log, final NRO, frame captures and Eden screenshots are preserved outside Git
 in the local first-scene evidence directory.
+
+## Controller input and MSAA resolve in Eden — 2026-10-25
+
+Host keyboard input now reaches the guest. `eden-cli` forwards SDL key events
+to the emulated controller, but only for real server input: `xdotool
+keydown --window` (XSendEvent) is ignored by SDL2. The working harness
+(`scripts/eden_input_probe.py`) selects the window owned by the Eden PID,
+focuses it, and sends XTEST key events. With the default keyboard profile,
+Start opens the in-game Q Watch and holding Up moves Bond forward.
+
+MSAA is fixed rather than bypassed. The guest Mesa/nouveau path drops a
+multisample `glBlitFramebuffer` aimed directly at the default framebuffer
+without reporting an error; the back buffer stays black. Resolving the
+multisample buffer into an ordinary texture FBO, then blitting that texture
+into the window back buffer, produces the correct image. The resolve is in
+`patches/goldeneye-pc-port/switch-msaa-resolve.patch`, is compiled on
+`__SWITCH__` only, and replaces the removed `switch-msaa-default.patch`.
+
+Verified under official Eden 0.2.1 on the host X display: MSAA 1x, 2x and 4x
+present the Dam; the watch-ring scanline shows the expected extra coverage
+step at 2x. Frame 600 render times under software Vulkan were 14.3 ms (1x),
+35.4 ms (2x) and 38.6 ms (4x), so this is a functional proof, not a
+performance claim. Verification NRO: 8,249,400 bytes, SHA-256
+`9c8fe6400db0de21ca97bedda7b5de24ab7f8038cc388bd4c132c9a76ed4eba1`.
+
+Evidence summary:
+`docs/evidence/goldeneye-20261025-input-msaa/README.md`. Raw screenshots,
+frame dumps, logs and the final NRO are preserved outside Git in the local
+input/MSAA evidence directory.
 
 ## Sources and licenses
 

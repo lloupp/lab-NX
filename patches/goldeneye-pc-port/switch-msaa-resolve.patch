@@ -1,0 +1,68 @@
+--- a/port/fast3d/gfx_opengl.cpp
++++ b/port/fast3d/gfx_opengl.cpp
+@@ -1405,6 +1405,18 @@
+     glEnable(GL_SCISSOR_TEST);
+ }
+ 
++#ifdef __SWITCH__
++/* Resolving a multisampled renderbuffer directly into the default
++ * framebuffer is silently dropped on the Switch Mesa/nouveau path under Eden:
++ * glBlitFramebuffer reports no error, but the window back buffer stays black.
++ * The same resolve into an ordinary texture FBO works, and that texture can
++ * then be blitted to the window normally. Keep both steps on Switch. */
++static GLuint msaa_resolve_fbo;
++static GLuint msaa_resolve_tex;
++static uint32_t msaa_resolve_width;
++static uint32_t msaa_resolve_height;
++#endif
++
+ void gfx_opengl_resolve_msaa_color_buffer(int fb_id_target, int fb_id_source) {
+     if (!gfx_framebuffers_enabled) {
+         return;
+@@ -1413,10 +1425,42 @@
+     Framebuffer& fb_dst = framebuffers[fb_id_target];
+     Framebuffer& fb_src = framebuffers[fb_id_source];
+     glDisable(GL_SCISSOR_TEST);
+-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb_dst.fbo);
+-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fb_src.fbo);
+-    glBlitFramebuffer(0, 0, fb_src.width, fb_src.height, 0, 0, fb_dst.width, fb_dst.height, GL_COLOR_BUFFER_BIT,
+-                      GL_NEAREST);
++#ifdef __SWITCH__
++    if (fb_id_target == 0 && fb_src.msaa_level > 1) {
++        if (msaa_resolve_fbo == 0) {
++            glGenFramebuffers(1, &msaa_resolve_fbo);
++            glGenTextures(1, &msaa_resolve_tex);
++        }
++        if (msaa_resolve_width != fb_src.width || msaa_resolve_height != fb_src.height) {
++            glBindTexture(GL_TEXTURE_2D, msaa_resolve_tex);
++            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, (GLsizei)fb_src.width, (GLsizei)fb_src.height, 0, GL_RGB,
++                         GL_UNSIGNED_BYTE, NULL);
++            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
++            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
++            glBindFramebuffer(GL_FRAMEBUFFER, msaa_resolve_fbo);
++            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, msaa_resolve_tex, 0);
++            msaa_resolve_width = fb_src.width;
++            msaa_resolve_height = fb_src.height;
++        }
++        /* Step 1: resolve the multisampled colour buffer into the texture. */
++        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, msaa_resolve_fbo);
++        glBindFramebuffer(GL_READ_FRAMEBUFFER, fb_src.fbo);
++        glBlitFramebuffer(0, 0, (GLint)fb_src.width, (GLint)fb_src.height, 0, 0, (GLint)fb_src.width,
++                          (GLint)fb_src.height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
++        /* Step 2: copy the resolved image into the window back buffer. */
++        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
++        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaa_resolve_fbo);
++        glReadBuffer(GL_COLOR_ATTACHMENT0);
++        glBlitFramebuffer(0, 0, (GLint)fb_src.width, (GLint)fb_src.height, 0, 0, (GLint)fb_dst.width,
++                          (GLint)fb_dst.height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
++    } else
++#endif
++    {
++        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb_dst.fbo);
++        glBindFramebuffer(GL_READ_FRAMEBUFFER, fb_src.fbo);
++        glBlitFramebuffer(0, 0, fb_src.width, fb_src.height, 0, 0, fb_dst.width, fb_dst.height,
++                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
++    }
+     /* current_framebuffer is an INDEX into framebuffers[], not a GL name; fb 0 is the window's default framebuffer (name 0). */
+     glBindFramebuffer(GL_FRAMEBUFFER, current_framebuffer == 0 ? 0 : framebuffers[current_framebuffer].fbo);
+     glEnable(GL_SCISSOR_TEST);
