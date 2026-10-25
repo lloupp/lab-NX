@@ -167,13 +167,20 @@ multisample buffer into an ordinary texture FBO, then blitting that texture
 into the window back buffer, produces the correct image. The resolve is in
 `patches/goldeneye-pc-port/switch-msaa-resolve.patch`, is compiled on
 `__SWITCH__` only, and replaces the removed `switch-msaa-default.patch`.
+The path presents up to 4x: an 8x multisample target stays black under this
+Eden/Mesa combination, so the renderer clamps Switch MSAA above 4x and logs a
+warning. 8x/16x requests therefore present at 4x instead of blacking out.
+
+Host audio was also captured through a PipeWire null-sink monitor: the 57.7 s
+recording is silent during boot and then carries game audio (RMS
+1,253-3,073), proving the guest audio path reaches the host sink.
 
 Verified under official Eden 0.2.1 on the host X display: MSAA 1x, 2x and 4x
 present the Dam; the watch-ring scanline shows the expected extra coverage
 step at 2x. Frame 600 render times under software Vulkan were 14.3 ms (1x),
 35.4 ms (2x) and 38.6 ms (4x), so this is a functional proof, not a
 performance claim. Verification NRO: 8,249,400 bytes, SHA-256
-`9c8fe6400db0de21ca97bedda7b5de24ab7f8038cc388bd4c132c9a76ed4eba1`.
+`e97de4923c2a0cc7dada537664b4c285b9aecbfa721e7fead7e03b7aec8e66ae`.
 
 Evidence summary:
 `docs/evidence/goldeneye-20261025-input-msaa/README.md`. Raw screenshots,

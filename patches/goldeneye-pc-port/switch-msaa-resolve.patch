@@ -1,3 +1,22 @@
+--- a/port/src/video.c
++++ b/port/src/video.c
+@@ -1040,6 +1040,16 @@
+     /* MSAA: snap the requested sample count down to a supported power of two. */
+     gfx_msaa_level = cfgMSAA >= 16 ? 16 : cfgMSAA >= 8 ? 8 : cfgMSAA >= 4 ? 4 : cfgMSAA >= 2 ? 2 : 1;
+ 
++#ifdef __SWITCH__
++    /* Eden's Mesa/nouveau path presents up to 4x; 8x and 16x render into a
++     * multisample target that never reaches the window. Clamp instead of
++     * presenting a black screen. */
++    if (gfx_msaa_level > 4) {
++        sysLogPrintf(LOG_WARNING, "video: Switch MSAA above 4x is not presented; clamping to 4x");
++        gfx_msaa_level = 4;
++    }
++#endif
++
+     int winW = cfgWinW > 0 ? cfgWinW : 0;   /* 0 -> gfx_sdl2 auto-fits to the desktop */
+     int winH = cfgWinH > 0 ? cfgWinH : 0;
+     int havePos = (cfgWinX >= 0 && cfgWinY >= 0);
 --- a/port/fast3d/gfx_opengl.cpp
 +++ b/port/fast3d/gfx_opengl.cpp
 @@ -1405,6 +1405,18 @@

@@ -78,7 +78,7 @@ def patch_config(template: Path, home: Path) -> str:
     return "\n".join(out) + "\n"
 
 
-def xdotool(env: dict, *args: str, timeout: float = 5.0) -> str:
+def xdotool(env: dict, *args: str, timeout: float = 10.0) -> str:
     return subprocess.check_output(["xdotool", *args], env=env, text=True,
                                    timeout=timeout, stderr=subprocess.DEVNULL).strip()
 
@@ -86,11 +86,11 @@ def xdotool(env: dict, *args: str, timeout: float = 5.0) -> str:
 def describe_window(env: dict, wid: str) -> dict:
     info: dict = {"id": wid}
     try:
-        info["name"] = xdotool(env, "getwindowname", wid, timeout=2)
+        info["name"] = xdotool(env, "getwindowname", wid, timeout=5)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         info["name"] = "?"
     try:
-        geo = xdotool(env, "getwindowgeometry", "--shell", wid, timeout=2)
+        geo = xdotool(env, "getwindowgeometry", "--shell", wid, timeout=5)
         for line in geo.splitlines():
             if "=" in line:
                 key, value = line.split("=", 1)
@@ -110,13 +110,13 @@ def describe_window(env: dict, wid: str) -> dict:
 def find_eden_window(env: dict, pid: int) -> tuple[str | None, list[dict]]:
     ids: list[str] = []
     try:
-        ids += xdotool(env, "search", "--pid", str(pid), timeout=3).split()
+        ids += xdotool(env, "search", "--pid", str(pid), timeout=10).split()
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         pass
     if not ids:
         for cls in ("eden", "eden-cli", "Eden"):
             try:
-                ids += xdotool(env, "search", "--class", cls, timeout=3).split()
+                ids += xdotool(env, "search", "--class", cls, timeout=10).split()
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 pass
     details = [describe_window(env, wid) for wid in dict.fromkeys(ids)]
@@ -127,7 +127,7 @@ def find_eden_window(env: dict, pid: int) -> tuple[str | None, list[dict]]:
 def screenshot(path: Path, env: dict, window: str | None) -> bool:
     return subprocess.run(["import", "-window", window or "root", str(path)], env=env,
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                          timeout=15).returncode == 0
+                          timeout=30).returncode == 0
 
 
 def send(env: dict, style: str, window: str, keysym: str, action: str) -> None:
@@ -167,6 +167,32 @@ def wait_for_frame(engine_log: Path, frame: int, timeout: float) -> bool:
     return False
 
 
+def wav_stats(path: Path) -> dict | None:
+    """RMS/peak of a 16-bit WAV, sampled every 4th value for speed."""
+    import array
+    import math
+    import wave
+    try:
+        with wave.open(str(path), "rb") as handle:
+            frames = handle.getnframes()
+            channels = handle.getnchannels()
+            rate = handle.getframerate()
+            width = handle.getsampwidth()
+            raw = handle.readframes(frames)
+    except (OSError, wave.Error):
+        return None
+    if width != 2 or not raw:
+        return {"frames": frames, "bytes": len(raw)}
+    samples = array.array("h")
+    samples.frombytes(raw)
+    sampled = samples[::4]
+    peak = max(abs(value) for value in sampled)
+    rms = math.sqrt(sum(value * value for value in sampled) / len(sampled))
+    return {"frames": frames, "channels": channels, "rate": rate,
+            "seconds": round(frames / rate, 2) if rate else None,
+            "peak": peak, "rms": round(rms, 1)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -190,6 +216,12 @@ def main() -> int:
     ap.add_argument("--wait-frame", type=int, default=600,
                     help="wait for this engine frame before injecting input (0 = act immediately)")
     ap.add_argument("--boot-timeout", type=float, default=100.0)
+    ap.add_argument("--host-audio", action="store_true",
+                    help="let Eden use the host audio sink instead of the SDL dummy driver")
+    ap.add_argument("--audio-sink",
+                    help="PulseAudio/PipeWire sink name exported as PULSE_SINK")
+    ap.add_argument("--audio-record", type=Path,
+                    help="record the sink monitor to this WAV for the whole run")
     args = ap.parse_args()
 
     for path in (args.eden, args.nro, args.rom, args.config_template):
@@ -248,13 +280,26 @@ def main() -> int:
         "XDG_CONFIG_HOME": str(home / ".config"),
         "XDG_CACHE_HOME": str(home / ".cache"),
         "DISPLAY": display,
-        "SDL_AUDIODRIVER": "dummy",
         "QT_QPA_PLATFORM": "xcb",
     })
+    if not args.host_audio and not args.audio_record:
+        env["SDL_AUDIODRIVER"] = "dummy"
+    if args.audio_sink:
+        env["PULSE_SINK"] = args.audio_sink
     eden_log_path = home / ".local/share/eden/log/eden_log.txt"
     engine_log = guest / "engine.log"
     result: dict = {"style": args.style, "sequence": args.sequence, "rom": rom,
                     "msaa": args.msaa, "frame_dump": args.frame_dump, "events": []}
+    recorder = None
+    audio_path = None
+    if args.audio_record:
+        audio_path = args.audio_record.expanduser().resolve()
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        device = f"{args.audio_sink}.monitor" if args.audio_sink else "@DEFAULT_MONITOR@"
+        recorder = subprocess.Popen(
+            ["parecord", "--device", device, "--channels=2", "--rate=48000",
+             "--format=s16le", "--file-format=wav", str(audio_path)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     log_handle = (out / "eden-stdout.log").open("wb")
     proc = subprocess.Popen([str(args.eden.expanduser().resolve()), "eden-cli",
                              "-g", str(args.nro.expanduser().resolve())],
@@ -277,6 +322,11 @@ def main() -> int:
                 result["waited_for_frame"] = wait_for_frame(
                     engine_log, args.wait_frame, max(10.0, args.boot_timeout - 2))
             window, details = find_eden_window(env, proc.pid)
+            for _ in range(4):
+                if window is not None:
+                    break
+                time.sleep(3)
+                window, details = find_eden_window(env, proc.pid)
             result["windows"] = details
             result["window"] = window
             if window is None:
@@ -327,6 +377,12 @@ def main() -> int:
                 except ProcessLookupError:
                     pass
         log_handle.close()
+        if recorder is not None and recorder.poll() is None:
+            recorder.send_signal(signal.SIGINT)
+            try:
+                recorder.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                recorder.kill()
         if xvfb is not None:
             xvfb.terminate()
             try:
@@ -346,6 +402,9 @@ def main() -> int:
         (out / "ppm").mkdir(exist_ok=True)
         for item in ppm.iterdir():
             shutil.copy2(item, out / "ppm" / item.name)
+    if audio_path is not None:
+        result["audio_file"] = str(audio_path)
+        result["audio"] = wav_stats(audio_path)
     (out / "report.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
     return 0 if result.get("ready") else 1

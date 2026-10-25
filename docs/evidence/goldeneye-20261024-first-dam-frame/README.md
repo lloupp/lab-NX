@@ -83,9 +83,10 @@ moved Bond. Physical-Switch input remains to be validated.
 
 ## Limits
 
-- MSAA resolves through the two-step Switch path; 1x/2x/4x verified, 8x/16x
-  and the `different_size` path are not.
-- Audio interaction, mission completion and physical-Switch execution are not
-  validated.
+- MSAA resolves through the two-step Switch path; 1x/2x/4x verified and
+  8x/16x requests are clamped to 4x. The `different_size` path is not
+  exercised.
+- The host audio sink receives game audio; mix correctness, mission
+  completion and physical-Switch execution are not validated.
 - The engine still uses Fast3D/Mesa/nouveau; the full deko3d backend remains
   unwired.
