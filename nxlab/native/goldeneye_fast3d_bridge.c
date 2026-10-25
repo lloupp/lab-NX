@@ -1,6 +1,7 @@
 #include "goldeneye_fast3d_bridge.h"
 #include <math.h>
 #include <stdint.h>
+#include <string.h>
 
 ge_fast3d_result ge_fast3d_unpack_rgb(
     const float *vbo, size_t float_count, size_t triangle_count,
