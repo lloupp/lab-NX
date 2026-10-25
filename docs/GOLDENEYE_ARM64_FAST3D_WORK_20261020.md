@@ -88,6 +88,70 @@ A Dockerized clangd setup now generates a non-committed compilation database and
 
 The earlier local Eden 0.2.1 smoke launch reached the frontend `BootGame` event but did not produce a guest `deko_boot_trace.txt`; it is not a rendered-smoke pass. A subsequent run of the **full trace-enabled engine NRO**, with the private NTSC-U ROM and all generated sidecars in an isolated Eden SD profile, reached `gfx_run` frame 0 and recorded 128 nonempty Fast3D batches. The first stable triangle profile was `d000030d12181218:00000012` (19-float stride, three RGB inputs, TEXEL0, fog and two-cycle, no alpha). It differs from the adapter's canonical SHADE-only RGB profile. The run did not prove a presented game frame; the screenshot was the Eden frontend. A bounded CPU converter for this measured profile and a live `gfx_flush()`-to-adapter observer are now linked in a fresh ARM64 engine build (`672e7122b141bcc65b1ba3e2f7475dadfaca96434045aaaea5c28434fefb6733`). That manifest explicitly says `deko3d_backend_enabled=false`; the subsequent adapter-enabled Eden attempt produced no guest log, so live conversion and presentation are not yet proven. Sanitized trace evidence and the raw local log hash are in `docs/evidence/goldeneye-20261022-fullengine-trace/`; the raw log and ROM-derived data remain outside Git.
 
+## Live adapter conversion recovered — 2026-10-24
+
+The adapter-enabled full-engine NRO now produces a guest log and converts
+live engine-origin Fast3D batches in official Eden 0.2.1. The instrumented
+build (8,249,400 bytes, SHA-256
+`15d833d0ebffe66a6eab13c2316e4ba341787ac7b084c53c656bbf56b2a3e355`) uses
+the pinned `devkitpro/devkita64:20260219` SDK, `GE_FAST3D_TRACE=1`, and
+`GE_FAST3D_ENGINE_ADAPTER=1`; `deko3d_backend_enabled` remains false.
+
+The earlier "no guest log" symptom was an Eden graphics-initialization
+failure, not an NRO startup crash. Under Xvfb/Lavapipe Eden reports
+`Device lacks a present queue` and `Failed to initialize VideoCore`, so the
+guest never starts. The same NRO on the host display with Intel Vulkan boots
+immediately, writes `engine.log` and `boot-early.log`, and reaches `gfx_run`.
+The runtime now writes absolute-path boot markers before and after `chdir`;
+`fsdevMountSdmc` returned `0x559`, `chdir` returned 0, and both log handles
+were valid.
+
+The run rendered 2,700+ frames; Eden's status bar reported about 33 FPS /
+30 ms. The adapter observed 128 `gfx_flush()` batches and converted 46 of the
+measured fog/texture profile `d000030d12181218:00000012` (`result=0`). The
+other 82 batches were rejected fail-closed (`result=2`): 32
+`1000020d0000818a:00000013`, 25 `320d020d818a818a:00000012`, 11 zero keys,
+9 `020d020d818a818a:00000013`, 3 clamp-S `d000030d12181218:00000112`, and 2
+`d000d00010001000:00000013`. The trace and adapter profile counts match
+exactly. Conversion remains CPU-only: no deko3d draw or submit is wired, and
+the presented game frame is still black. No original GoldenEye frame, menu,
+mission, or physical-Switch result is claimed.
+
+Evidence summary: `docs/evidence/goldeneye-20261024-adapter-live/README.md`.
+The raw log, instrumented NRO, Eden log, boot markers, and screenshot are
+preserved outside Git; the raw log is 87,025 bytes (SHA-256
+`3dd5ffdc1ad4877b84e85ca7c19dad7939b18b7eb60190feefebdf415bbaf484`) and
+contains embedded NULs.
+
+## First original Dam scene visible — 2026-10-24
+
+The complete ARM64 engine now presents the first original GoldenEye scene in
+official Eden 0.2.1. The Dam loads, fades in, and reaches the first-person
+view with Bond's pistol and the ammo HUD (`7 | 93`). The final NRO is
+8,249,400 bytes, SHA-256
+`43476785ab6ee3a9af7db606194e07bea9a0811b991c5f4c3d69e9302ed18bb3`; the
+engine has run 2,700+ frames in a longer session and 1,200+ frames in the
+MSAA-fix run, at roughly 20-50 ms per frame.
+
+The black presentation was caused by the default `MSAA = 2` path: the scene
+renders into a multisample FBO and the resolve/composite to the default
+framebuffer does not present on the Switch Mesa 20.1 nouveau path. Forcing
+`MSAA = 1` renders directly to the default framebuffer and the Dam scene
+appears. `patches/goldeneye-pc-port/switch-msaa-default.patch` now forces 1x
+on Switch with a warning; the multisample resolve still needs a proper fix.
+
+Controller injection was not proven in this environment. Eden's CLI frontend
+boots the NRO and the game window has X input focus, but keyboard events do
+not reach the guest's emulated controller; the GUI frontend did not load the
+NRO from its game list. The first-person Dam gameplay view and HUD are
+rendered, but physical input, mission completion and physical-Switch
+execution remain unvalidated.
+
+Evidence summary:
+`docs/evidence/goldeneye-20261024-first-dam-frame/README.md`. The raw engine
+log, final NRO, frame captures and Eden screenshots are preserved outside Git
+in the local first-scene evidence directory.
+
 ## Sources and licenses
 
 - GoldenEye PC Port: https://github.com/jkdansereau/goldeneye-pc-port

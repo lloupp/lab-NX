@@ -1,0 +1,19 @@
+--- a/port/src/video.c
++++ b/port/src/video.c
+@@ -1037,6 +1037,16 @@
+     gfx_framebuffers_enabled = true;
+     gfx_detail_textures_enabled = false;
+ 
++#ifdef __SWITCH__
++    /* The Switch Mesa/nouveau path does not composite the multisample FBO
++     * back to the default framebuffer; the result is a black window while the
++     * scene renders into the FBO. Force 1x until the resolve path is wired. */
++    if (cfgMSAA > 1) {
++        sysLogPrintf(LOG_WARNING, "video: Switch MSAA resolve path unsupported; forcing MSAA=1 (requested %d)", cfgMSAA);
++        cfgMSAA = 1;
++    }
++#endif
++
+     /* MSAA: snap the requested sample count down to a supported power of two. */
+     gfx_msaa_level = cfgMSAA >= 16 ? 16 : cfgMSAA >= 8 ? 8 : cfgMSAA >= 4 ? 4 : cfgMSAA >= 2 ? 2 : 1;
+ 

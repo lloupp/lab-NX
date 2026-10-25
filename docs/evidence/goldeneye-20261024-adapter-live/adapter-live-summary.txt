@@ -1,0 +1,27 @@
+Adapter live-conversion summary — 2026-10-24
+NRO SHA-256 15d833d0ebffe66a6eab13c2316e4ba341787ac7b084c53c656bbf56b2a3e355
+Run: Eden 0.2.1, Intel Vulkan, private NTSC-U ROM + 512 model / 86 bg-setup sidecars
+
+Key lines from the sanitized guest engine.log:
+
+[GE_FAST3D_ADAPTER] attached for bounded engine-batch conversion; GPU submit not wired
+[GE_FAST3D_TRACE] source=engine-display-list frame=0 commands=0x700cc050
+[GE_FAST3D_ADAPTER] batch=0 result=2 shader=0000000000000000:00000000 floats=126 triangles=6
+[GE_FAST3D_ADAPTER] batch=11 result=2 shader=020d020d818a818a:00000013 floats=120 triangles=2
+[GE_FAST3D_ADAPTER] cpu-conversion=0 profile=d000030d12181218:00000012 triangles=8 vertices=24; GPU submit not wired
+[GE_FAST3D_ADAPTER] cpu-conversion=0 profile=d000030d12181218:00000012 triangles=2 vertices=6; GPU submit not wired
+[NOTE ] frame 1 rendered in 2173012 us
+[NOTE ] frame 2 rendered in 676904 us
+[NOTE ] frame 3 rendered in 83560 us
+[NOTE ] frame 600 rendered in 37841 us
+[NOTE ] frame 1200 rendered in 31124 us
+[NOTE ] frame 1800 rendered in 39275 us
+[NOTE ] frame 2400 rendered in 25817 us
+[NOTE ] frame 2700 rendered in 31938 us
+
+Counts:
+- 175 [GE_FAST3D_ADAPTER] lines: 1 attach + 128 batch results + 46 conversions
+- 46 conversions succeeded (result=0), all profile d000030d12181218:00000012
+- 82 batches rejected (result=2) across the other observed profiles
+- 384 [GE_FAST3D_TRACE] lines; trace and adapter batch-profile counts match exactly
+- 2,700+ engine frames rendered; presentation black; no original frame claimed

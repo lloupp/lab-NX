@@ -58,15 +58,45 @@ static bool geEngineFast3dSink(void *, const float *vbo, size_t floats,
     return result == GE_F3D_OK;
 }
 
+static void geBootDebug(const char *stage, Result rc)
+{
+    char line[192];
+    int n = snprintf(line, sizeof line, "[GE_BOOT] stage=%s rc=%08x\n", stage, (unsigned)rc);
+    if (n > 0) (void)svcOutputDebugString(line, (u64)n);
+}
+
+static void geBootWrite(const char *path, const char *text)
+{
+    FILE *file = fopen(path, "w");
+    if (!file) return;
+    fputs(text, file);
+    fclose(file);
+}
+
 void geEngineBoot(void) {
-    fsdevMountSdmc();
-    mkdir("sdmc:/switch",0777);
-    mkdir("sdmc:/switch/lab-nx",0777);
-    mkdir("sdmc:/switch/lab-nx/goldeneye",0777);
-    mkdir("sdmc:/switch/lab-nx/goldeneye/data",0777);
-    chdir("sdmc:/switch/lab-nx/goldeneye");
-    freopen("engine.log","w",stderr);
-    freopen("engine-stdout.log","w",stdout);
+    char line[256];
+    Result mount = fsdevMountSdmc();
+    snprintf(line, sizeof line, "stage=mount rc=%08x\n", (unsigned)mount);
+    geBootDebug("mount", mount);
+    /* Write at the SD root before chdir so an unexpected cwd cannot hide
+     * guest entry. These markers are diagnostic only. */
+    geBootWrite("sdmc:/goldeneye-boot.log", line);
+    int mk_switch = mkdir("sdmc:/switch",0777);
+    int mk_lab = mkdir("sdmc:/switch/lab-nx",0777);
+    int mk_ge = mkdir("sdmc:/switch/lab-nx/goldeneye",0777);
+    int mk_data = mkdir("sdmc:/switch/lab-nx/goldeneye/data",0777);
+    geBootDebug("mkdirs", (Result)(unsigned)(mk_switch | mk_lab | mk_ge | mk_data));
+    snprintf(line, sizeof line, "stage=mount+mkdir rc=%08x mkdir=%d,%d,%d,%d\n",
+             (unsigned)mount, mk_switch, mk_lab, mk_ge, mk_data);
+    geBootWrite("sdmc:/switch/goldeneye-boot.log", line);
+    int chdir_rc = chdir("sdmc:/switch/lab-nx/goldeneye");
+    geBootDebug("chdir", (Result)chdir_rc);
+    FILE *engine = freopen("sdmc:/switch/lab-nx/goldeneye/engine.log","w",stderr);
+    FILE *stdout_log = freopen("sdmc:/switch/lab-nx/goldeneye/engine-stdout.log","w",stdout);
+    snprintf(line, sizeof line, "stage=files mount=%08x chdir=%d stderr=%p stdout=%p\n",
+             (unsigned)mount, chdir_rc, (void *)engine, (void *)stdout_log);
+    geBootWrite("sdmc:/switch/lab-nx/goldeneye/boot-early.log", line);
+    if (!engine || !stdout_log) geBootWrite("sdmc:/goldeneye-boot-error.log", line);
     setvbuf(stderr,NULL,_IONBF,0);
     setvbuf(stdout,NULL,_IONBF,0);
     fprintf(stderr,"Switch ARM64 full engine entry; target Dam; gameplay not confirmed\n");
