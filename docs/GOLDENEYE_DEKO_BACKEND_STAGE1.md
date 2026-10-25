@@ -1,4 +1,4 @@
-# GoldenEye NX — deko3d backend, stages 1–2 (2026-10-25)
+# GoldenEye NX — deko3d backend, stages 1–3 (2026-10-25)
 
 ## What this is
 
@@ -27,6 +27,11 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   `mix(INPUT_1, TEXEL0, INPUT_2) * INPUT_3` with per-vertex fog. Textured
   characters now render; the texture run uploaded textures 1–8 and recorded
   about **165 draws / 105 skips per frame**.
+- Stage 3 adds a generic VBO unpacker (`ge_fast3d_unpack_generic`) for the
+  2-texture profiles and an environment shader implementing
+  `mix(TEXEL0, TEXEL1, INPUT_1) * INPUT_2` with fog. The Dam exterior now
+  renders through deko3d; the stage-3 run records about **139–148 draws and
+  14 skips per frame**.
 - Depth (`Z24S8`, `LEQUAL`) and a clamped scissor: Fast3D can pass negative
   scissor rectangles, and `DkScissor` is unsigned, so the rectangle is clamped
   to the framebuffer before recording.
@@ -37,15 +42,12 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
 
 ## What is not implemented
 
-- **Environment profiles.** The 2-texture profiles
-  (`1000020d0000818a:13`, `320d020d818a818a:12`, `020d020d818a818a:13`,
-  `d000d00010001000:13`) keep the engine's VBO layout for `shader_get_info`
-  but are not drawn. Their layout is `pos4, tex0 uv2, tex1 uv2, fog4,
-  inputs` where each input is 3 floats (or 4 with the alpha option); a
-  generic unpacker and a `mix(TEXEL0, TEXEL1, INPUT_1) * INPUT_2` shader are
-  the next step. The Dam background is therefore still missing.
-- **Alpha and clamp variants.** `use_alpha` VBOs (4 floats per input) and the
-  clamp-S/T texcoord extras are not parsed yet.
+- **Alpha and clamp variants.** The generic unpacker accepts `use_alpha`
+  VBOs and clamp-S/T extras, but the fragment shaders approximate alpha with
+  `tex0.a` and do not model every combiner alpha path. Some surfaces (large
+  flat roof/fan geometry) still shade incorrectly.
+- **No-texture combiner variants** such as `d000d00010001000:13` are parsed
+  but not shaded (skipped).
 - MSAA is forced to 1; the two-step GL resolve is not used by this backend.
 - The `different_size` render path is not exercised.
 - One command buffer and one vertex block are reused; the backend calls
@@ -75,17 +77,19 @@ the backend and compiles the two DKSH programs with `uam`. Without
 
 ## Evidence
 
-Verification NRO (stage 2): 8,306,744 bytes, SHA-256
-`4f5f42fb37eb3a452f9852da9f7f9fa18150aec76131c4e84d09bfcaa39edaf5`.
+Verification NRO (stage 3): 8,306,744 bytes, SHA-256
+`7133c1d08df03fce8c58bfb8e48b5da93b8c2a334057c725dc1443bd9f2af30d`.
 Patched deko3d: SHA-256
 `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
 
 Raw runs and the NRO are preserved outside Git in
 `007/goldeneye-deko-backend-20261025/`:
 
+- `run-20261025-162838-xtest/`: stage-3 full Dam exterior with
+  `stage3-full-dam-textured.png` and the engine log (8 texture uploads,
+  ~139–148 draws/14 skips).
 - `run-20261025-145258-xtest/`: stage-2 texture run with
-  `stage2-textured-characters.png` and the engine log (8 texture uploads,
-  ~165 draws/105 skips).
+  `stage2-textured-characters.png` and the engine log.
 - `run-20261025-133105-xtest/`: stage-1 run, 2-colour screenshot and
   draw/skip counts.
 - `diagnostic-triangle-and-game-silhouettes.png`: a temporary build with the
@@ -96,9 +100,8 @@ Raw runs and the NRO are preserved outside Git in
 
 ## Next steps
 
-1. Generic canonical vertex + unpacker for the 2-texture profiles, with
-   `use_alpha` and clamp extras; a `mix(TEXEL0, TEXEL1, INPUT_1) * INPUT_2`
-   fragment shader and two texture bindings.
+1. Alpha/combiner parity for the remaining surfaces; no-texture combiner
+   variants.
 2. Depth/z validation and, later, MSAA and command-buffer double buffering.
 3. A CI job that builds the patched deko3d and the engine backend; the
    current workflows only build the GL engine.

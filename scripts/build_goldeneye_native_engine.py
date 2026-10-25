@@ -91,6 +91,10 @@ def main():
             ROOT / "nxlab/deko_backend/shaders/fogtex_vsh.glsl")
         run(uam, "-s", "frag", "-o", shader_dir / "fogtex_fsh.dksh",
             ROOT / "nxlab/deko_backend/shaders/fogtex_fsh.glsl")
+        run(uam, "-s", "vert", "-o", shader_dir / "env2tex_vsh.dksh",
+            ROOT / "nxlab/deko_backend/shaders/env2tex_vsh.glsl")
+        run(uam, "-s", "frag", "-o", shader_dir / "env2tex_fsh.dksh",
+            ROOT / "nxlab/deko_backend/shaders/env2tex_fsh.glsl")
 
         def emit(name: str, path: Path) -> str:
             data = path.read_bytes()
@@ -102,7 +106,9 @@ def main():
                   + emit("deko_triangle_vsh", shader_dir / "triangle_vsh.dksh")
                   + emit("deko_color_fsh", shader_dir / "color_fsh.dksh")
                   + emit("deko_fogtex_vsh", shader_dir / "fogtex_vsh.dksh")
-                  + emit("deko_fogtex_fsh", shader_dir / "fogtex_fsh.dksh"))
+                  + emit("deko_fogtex_fsh", shader_dir / "fogtex_fsh.dksh")
+                  + emit("deko_env2tex_vsh", shader_dir / "env2tex_vsh.dksh")
+                  + emit("deko_env2tex_fsh", shader_dir / "env2tex_fsh.dksh"))
         (source / "port/fast3d/deko_shader_bytes.h").write_text(header)
     # The original CMake source lists and all NTSC-U definitions remain authoritative.
     libs = dkp / "portlibs/switch"

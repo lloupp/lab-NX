@@ -65,6 +65,23 @@ ge_fast3d_result ge_fast3d_unpack_fogtex_rgb3(
     ge_fast3d_fogtex_vertex *dst, size_t vertex_capacity,
     size_t *out_vertices);
 
+/* Canonical vertex used by the deko3d backend for multi-texture profiles.
+ * The engine's VBO order is position, texcoords for each used texture
+ * (plus optional clamp scalars), fog, grayscale, then each combiner input
+ * (RGB, plus alpha when the shader has SHADER_OPT_ALPHA). */
+typedef struct {
+    float position[4];
+    float texcoord[2][2];
+    float fog[4];
+    float input_rgb[3][4];
+} ge_fast3d_generic_vertex;
+
+ge_fast3d_result ge_fast3d_unpack_generic(
+    const float *vbo, size_t float_count, size_t triangle_count,
+    const ge_fast3d_profile *profile,
+    ge_fast3d_generic_vertex *dst, size_t vertex_capacity,
+    size_t *out_vertices);
+
 #ifdef __cplusplus
 }
 #endif

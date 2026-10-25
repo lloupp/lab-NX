@@ -51,6 +51,7 @@ struct DekoProgram {
     bool used_textures[SHADER_MAX_TEXTURES];
     bool supported;
     bool fogtex;
+    bool env2tex;
 };
 
 struct DekoTexture {
@@ -78,7 +79,7 @@ static struct {
     DkGpuAddr sampler_desc_gpu;
     DkSampler sampler;
     uint32_t upload_id;
-    uint32_t selected_id;
+    uint32_t selected_id[2];
     DekoTexture textures[GE_DEKO_MAX_TEXTURES];
     DkCmdBuf cmd;
     DkQueue queue;
@@ -86,6 +87,8 @@ static struct {
     DkShader fsh;
     DkShader fogtex_vsh;
     DkShader fogtex_fsh;
+    DkShader env_vsh;
+    DkShader env_fsh;
     DkImageView color_view;
     DkImageView depth_view;
     DkCmdList frame_cmd;
@@ -236,7 +239,9 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
     if (!deko_load_shader(&g.vsh, deko_triangle_vsh, deko_triangle_vsh_len) ||
         !deko_load_shader(&g.fsh, deko_color_fsh, deko_color_fsh_len) ||
         !deko_load_shader(&g.fogtex_vsh, deko_fogtex_vsh, deko_fogtex_vsh_len) ||
-        !deko_load_shader(&g.fogtex_fsh, deko_fogtex_fsh, deko_fogtex_fsh_len)) {
+        !deko_load_shader(&g.fogtex_fsh, deko_fogtex_fsh, deko_fogtex_fsh_len) ||
+        !deko_load_shader(&g.env_vsh, deko_env2tex_vsh, deko_env2tex_vsh_len) ||
+        !deko_load_shader(&g.env_fsh, deko_env2tex_fsh, deko_env2tex_fsh_len)) {
         sysLogPrintf(LOG_ERROR, "deko3d: DKSH load failed");
         return false;
     }
@@ -407,12 +412,15 @@ static struct ShaderProgram *deko_create_shader(uint64_t id0, uint32_t id1)
     program->used_textures[0] = features.used_textures[0];
     program->used_textures[1] = features.used_textures[1];
     program->fogtex = (id0 == GE_F3D_FOGTEX_RGB3_ID0 && id1 == GE_F3D_FOGTEX_RGB3_ID1);
-    program->supported = (id0 == 0x1000u && id1 == 0u) || program->fogtex;
+    program->env2tex = !program->fogtex && features.used_textures[0] &&
+                       features.used_textures[1] && features.num_inputs >= 2;
+    program->supported = (id0 == 0x1000u && id1 == 0u) || program->fogtex || program->env2tex;
     if (g.programs <= 8 || program->supported) {
-        sysLogPrintf(LOG_NOTE, "deko3d: shader %016llx:%08x inputs=%u tex=%u:%u fogtex=%d supported=%d",
+        sysLogPrintf(LOG_NOTE, "deko3d: shader %016llx:%08x inputs=%u tex=%u:%u fogtex=%d env=%d supported=%d",
                      (unsigned long long)id0, id1, program->num_inputs,
                      program->used_textures[0] ? 1u : 0u, program->used_textures[1] ? 1u : 0u,
-                     program->fogtex ? 1 : 0, program->supported ? 1 : 0);
+                     program->fogtex ? 1 : 0, program->env2tex ? 1 : 0,
+                     program->supported ? 1 : 0);
     }
     return deko_as_handle(program);
 }
@@ -473,16 +481,14 @@ static uint32_t deko_new_texture(void)
     }
     const uint32_t id = ++g.next_texture;
     g.upload_id = id;
-    g.selected_id = id;
     return id;
 }
 
 static void deko_select_texture(int tile, uint32_t texture_id, bool linear_filter)
 {
-    (void)tile;
     (void)linear_filter;
-    if (texture_id > 0 && texture_id <= GE_DEKO_MAX_TEXTURES) {
-        g.selected_id = texture_id;
+    if (tile >= 0 && tile < 2 && texture_id > 0 && texture_id <= GE_DEKO_MAX_TEXTURES) {
+        g.selected_id[tile] = texture_id;
     }
 }
 
@@ -545,14 +551,15 @@ static void deko_upload_texture(const uint8_t *rgba32, uint32_t width, uint32_t 
 
 static void deko_sampler_parameters(int sampler, bool linear_filter, uint32_t cms, uint32_t cmt, bool mipmaps)
 {
-    (void)sampler;
     (void)mipmaps;
-    g.sampler.minFilter = linear_filter ? DkFilter_Linear : DkFilter_Nearest;
-    g.sampler.magFilter = linear_filter ? DkFilter_Linear : DkFilter_Nearest;
-    g.sampler.wrapMode[0] = deko_wrap_mode(cms);
-    g.sampler.wrapMode[1] = deko_wrap_mode(cmt);
-    g.sampler.wrapMode[2] = DkWrapMode_Repeat;
-    dkSamplerDescriptorInitialize(&g.sampler_desc[0], &g.sampler);
+    DkSampler s;
+    dkSamplerDefaults(&s);
+    s.minFilter = linear_filter ? DkFilter_Linear : DkFilter_Nearest;
+    s.magFilter = linear_filter ? DkFilter_Linear : DkFilter_Nearest;
+    s.wrapMode[0] = deko_wrap_mode(cms);
+    s.wrapMode[1] = deko_wrap_mode(cmt);
+    s.wrapMode[2] = DkWrapMode_Repeat;
+    dkSamplerDescriptorInitialize(&g.sampler_desc[sampler & 1], &s);
 }
 
 static void deko_depth_mode(bool test, bool update, bool compare, bool prim, uint16_t zmode)
@@ -664,6 +671,39 @@ static void deko_stage_fogtex(const ge_fast3d_fogtex_vertex *data, size_t vertic
     g.draws++;
 }
 
+static void deko_stage_generic(const ge_fast3d_generic_vertex *data, size_t vertices)
+{
+    const size_t bytes = vertices * sizeof(*data);
+    const size_t aligned = (g.vertex_used + 3u) & ~(size_t)3u;
+    if (aligned + bytes > GE_DEKO_VERTEX_BYTES) {
+        g.skipped++;
+        return;
+    }
+    uint8_t *dst = (uint8_t *)dkMemBlockGetCpuAddr(g.vertex_mem) + aligned;
+    memcpy(dst, data, bytes);
+    const DkGpuAddr gpu = dkMemBlockGetGpuAddr(g.vertex_mem) + aligned;
+    DkBufExtents extents = {gpu, bytes};
+    dkCmdBufBindVtxBuffers(g.cmd, 0, &extents, 1);
+    const uint32_t stride = (uint32_t)sizeof(ge_fast3d_generic_vertex);
+    const uint32_t tex_off = (uint32_t)offsetof(ge_fast3d_generic_vertex, texcoord);
+    const uint32_t in_off = (uint32_t)offsetof(ge_fast3d_generic_vertex, input_rgb);
+    DkVtxAttribState attribs[7] = {
+        {0, 0, (uint32_t)offsetof(ge_fast3d_generic_vertex, position), DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
+        {0, 0, tex_off, DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
+        {0, 0, tex_off + 8u, DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
+        {0, 0, (uint32_t)offsetof(ge_fast3d_generic_vertex, fog), DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
+        {0, 0, in_off, DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
+        {0, 0, in_off + 16u, DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
+        {0, 0, in_off + 32u, DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
+    };
+    DkVtxBufferState buffers[1] = {{stride, 0}};
+    dkCmdBufBindVtxAttribState(g.cmd, attribs, 7);
+    dkCmdBufBindVtxBufferState(g.cmd, buffers, 1);
+    dkCmdBufDraw(g.cmd, DkPrimitive_Triangles, (uint32_t)vertices, 1, 0, 0);
+    g.vertex_used = aligned + bytes;
+    g.draws++;
+}
+
 static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
 {
     static unsigned debug_draws;
@@ -714,7 +754,7 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         }
         DkShader const *shaders[2] = {&g.fogtex_vsh, &g.fogtex_fsh};
         dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
-        const uint32_t texture_id = g.selected_id;
+        const uint32_t texture_id = g.selected_id[0];
         if (texture_id == 0 || texture_id > GE_DEKO_MAX_TEXTURES ||
             !g.textures[texture_id - 1].ready) {
             free(scratch);
@@ -724,6 +764,45 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0,
                             dkMakeTextureHandle(texture_id - 1, 0));
         deko_stage_fogtex(scratch, written);
+        free(scratch);
+        return;
+    }
+    if (g.current->env2tex) {
+        ge_fast3d_profile profile = {
+            g.current->num_inputs,
+            (unsigned)((g.current->used_textures[0] ? 1u : 0u) | (g.current->used_textures[1] ? 2u : 0u)),
+            (g.current->id1 & SHADER_OPT_ALPHA) ? 1u : 0u,
+            (g.current->id1 & SHADER_OPT_FOG) ? 1u : 0u,
+            (g.current->id1 & SHADER_OPT_GRAYSCALE) ? 1u : 0u,
+            g.current->id0, g.current->id1
+        };
+        size_t written = 0;
+        ge_fast3d_generic_vertex *scratch =
+            (ge_fast3d_generic_vertex *)malloc(vertices * sizeof(*scratch));
+        if (!scratch) {
+            g.skipped++;
+            return;
+        }
+        if (ge_fast3d_unpack_generic(vbo, vbo_len, triangles, &profile, scratch,
+                                     vertices, &written) != GE_F3D_OK ||
+            written != vertices) {
+            free(scratch);
+            g.skipped++;
+            return;
+        }
+        const uint32_t t0 = g.selected_id[0];
+        const uint32_t t1 = g.selected_id[1];
+        if (!t0 || !t1 || t0 > GE_DEKO_MAX_TEXTURES || t1 > GE_DEKO_MAX_TEXTURES ||
+            !g.textures[t0 - 1].ready || !g.textures[t1 - 1].ready) {
+            free(scratch);
+            g.skipped++;
+            return;
+        }
+        DkShader const *shaders[2] = {&g.env_vsh, &g.env_fsh};
+        dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
+        dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0, dkMakeTextureHandle(t0 - 1, 0));
+        dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 1, dkMakeTextureHandle(t1 - 1, 1));
+        deko_stage_generic(scratch, written);
         free(scratch);
         return;
     }
