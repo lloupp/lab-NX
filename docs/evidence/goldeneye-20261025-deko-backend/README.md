@@ -31,6 +31,7 @@ the facility are visible in `stage3-full-dam-textured.png`.
 - Patched deko3d (dekotools MME upload): SHA-256
   `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
   The stock devkitPro `libdeko3d.a` fails at `dkQueueCreate` in Eden.
+- `stage6-aerial-confirmed.png`: aerial view with the former black hole filled.
 - `stage6-sky-backdrop-filled.png`: sky/backdrop geometry drawn again after
   the fallback profiles.
 - `stage5-clamp-edge-dam.png`: the Dam aerial view with clamp-S/T and
