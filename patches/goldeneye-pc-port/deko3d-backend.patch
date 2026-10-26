@@ -73,3 +73,35 @@
  list(APPEND LIBS "${EXTRA_LIBRARIES}")
  
  # ----------------------------------------------------------------------------
+diff --git a/port/src/main.c b/port/src/main.c
+index c71bf17..dffca5f 100644
+--- a/port/src/main.c
++++ b/port/src/main.c
+@@ -17,6 +17,7 @@
+ 
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <string.h>
+ 
+ #include <PR/ultratypes.h>
+ #include <PR/os.h>
+@@ -128,7 +129,18 @@ int main(int argc, char **argv)
+     #ifdef __SWITCH__
+     extern void geEngineBoot(void);
+     geEngineBoot();
+-    char *switch_argv[] = { "goldeneye-native-engine", "-level_33", NULL };
++    /* Deko backend harness: the boot level can be overridden without a
++     * rebuild. data/boot_level.txt holds one argument (e.g. -level_36 for
++     * Surface 1); the default stays Dam (-level_33). */
++    static char switch_boot_level[16] = "-level_33";
++    FILE *boot_level = fopen("sdmc:/switch/lab-nx/goldeneye/data/boot_level.txt", "r");
++    if (boot_level) {
++        if (fgets(switch_boot_level, (int)sizeof(switch_boot_level), boot_level)) {
++            switch_boot_level[strcspn(switch_boot_level, "\r\n")] = '\0';
++        }
++        fclose(boot_level);
++    }
++    char *switch_argv[] = { "goldeneye-native-engine", switch_boot_level, NULL };
+     argc = 2; argv = switch_argv;
+     #endif
+     sysSetArgs(argc, argv);

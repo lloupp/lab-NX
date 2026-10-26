@@ -68,6 +68,18 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   with `dkCmdBufBlitImage` left the tiled destination levels uninitialised
   under Eden, so every level uses the copy path (which the base level
   already exercised).
+- Stage 9 implements the RDP noise dither (`AC_DITHER`, Fast3D
+  `SHADER_OPT_NOISE`). A per-frame uniform buffer carries `frame_count` and
+  `noise_scale` (GL stores 1/noise_scale; it comes from
+  `start_draw_to_framebuffer`), and four fragment variants mirror the GL
+  formula `random(floor(gl_FragCoord.xy * noise_scale), frame_count)`:
+  dithered discard for texedge profiles and alpha modulation otherwise, for
+  both the one-texture fallbacks and the 2-texture alpha combiner. A
+  21-level sweep plus the Dam, menu and watch runs found no profile with
+  `AC_DITHER` set in this engine revision, so the path is correct by
+  construction but dormant in the tested content.
+- `data/boot_level.txt` (one `-level_XX` argument) overrides the Switch
+  build's hardcoded Dam boot; without the file the default is unchanged.
 - Depth (`Z24S8`, `LEQUAL`) and a clamped scissor: Fast3D can pass negative
   scissor rectangles, and `DkScissor` is unsigned, so the rectangle is clamped
   to the framebuffer before recording.
@@ -119,6 +131,8 @@ Stage 7 NRO: 8,319,032 bytes, SHA-256
 `4c0232bf5150d15ec9ba247cebdda781494fd038c11abd0c27a922d3efb7f8e5`.
 Stage 8 NRO: 8,323,128 bytes, SHA-256
 `b0958ffe124ff12f1e6eb7bb111d15d3ca78f6cc342ca84973db7020bca8eae0`.
+Stage 9 NRO: 8,331,320 bytes, SHA-256
+`9dbe60d6eaf7d006a53d04a547cd3ff21f31a72a1dfe00996efb11e4bf0bf337`.
 Patched deko3d: SHA-256
 `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
 
@@ -131,6 +145,10 @@ Raw runs and the NRO are preserved outside Git in
 - Stage 8 mipmaps: `stage8-mips-dam-wall.png` (smooth dam wall),
   `stage8-mips-cliffs.png` (cliffs + grating), and the pre-mip aliasing in
   `stage7-mips-off-cliffs.png`.
+- Stage 9 noise: `stage9-noise-dam.png` (Dam with the UBO bound),
+  `stage9-acdither-sweep.txt` (21-level sweep, no AC_DITHER profiles) and
+  `stage9-noise-forced-log.txt` (diagnostic build forcing noise, `noise=1`
+  profiles selected).
 - `run-20261026-114037-xtest/`: stage-5 Dam aerial view with
   `stage5-clamp-edge-dam.png`.
 - `run-20261025-172002-xtest/`: stage-4 Dam aerial view with
@@ -153,8 +171,8 @@ Raw runs and the NRO are preserved outside Git in
 1. The aerial black shape was the clear colour through missing backdrop
    geometry (stage 6); the flat blue sky was sampler state leaking between
    textures (stage 7); minified-surface moiré is fixed by the mip chain
-   (stage 8). Next: the noise dither path and the remaining combiner
-   variants.
+   (stage 8). Noise dither is implemented (stage 9) but no reachable scene
+   sets AC_DITHER. Next: the remaining combiner variants.
 2. Depth/z validation and, later, MSAA and command-buffer double buffering.
 3. The `deko3d-engine-build` CI job builds the patched deko3d and the engine
    backend alongside the GL jobs.

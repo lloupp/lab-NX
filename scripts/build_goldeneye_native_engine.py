@@ -111,6 +111,14 @@ def main():
             ROOT / "nxlab/deko_backend/shaders/flat_fsh.glsl")
         run(uam, "-s", "frag", "-o", shader_dir / "sky_fsh.dksh",
             ROOT / "nxlab/deko_backend/shaders/sky_fsh.glsl")
+        run(uam, "-s", "frag", "-o", shader_dir / "tex0_noise_fsh.dksh",
+            ROOT / "nxlab/deko_backend/shaders/tex0_noise_fsh.glsl")
+        run(uam, "-s", "frag", "-o", shader_dir / "tex0_noise_edge_fsh.dksh",
+            ROOT / "nxlab/deko_backend/shaders/tex0_noise_edge_fsh.glsl")
+        run(uam, "-s", "frag", "-o", shader_dir / "env2tex_edge_noise_fsh.dksh",
+            ROOT / "nxlab/deko_backend/shaders/env2tex_edge_noise_fsh.glsl")
+        run(uam, "-s", "frag", "-o", shader_dir / "env2tex_alpha_noise_fsh.dksh",
+            ROOT / "nxlab/deko_backend/shaders/env2tex_alpha_noise_fsh.glsl")
 
         def emit(name: str, path: Path) -> str:
             data = path.read_bytes()
@@ -132,7 +140,11 @@ def main():
                   + emit("deko_texmix_fsh", shader_dir / "texmix_fsh.dksh")
                   + emit("deko_flat_vsh", shader_dir / "flat_vsh.dksh")
                   + emit("deko_flat_fsh", shader_dir / "flat_fsh.dksh")
-                  + emit("deko_sky_fsh", shader_dir / "sky_fsh.dksh"))
+                  + emit("deko_sky_fsh", shader_dir / "sky_fsh.dksh")
+                  + emit("deko_tex0_noise_fsh", shader_dir / "tex0_noise_fsh.dksh")
+                  + emit("deko_tex0_noise_edge_fsh", shader_dir / "tex0_noise_edge_fsh.dksh")
+                  + emit("deko_env2tex_edge_noise_fsh", shader_dir / "env2tex_edge_noise_fsh.dksh")
+                  + emit("deko_env2tex_alpha_noise_fsh", shader_dir / "env2tex_alpha_noise_fsh.dksh"))
         (source / "port/fast3d/deko_shader_bytes.h").write_text(header)
     # The original CMake source lists and all NTSC-U definitions remain authoritative.
     libs = dkp / "portlibs/switch"
