@@ -72,6 +72,7 @@ ge_fast3d_result ge_fast3d_unpack_fogtex_rgb3(
 typedef struct {
     float position[4];
     float texcoord[2][2];
+    float clamp[2][2];
     float fog[4];
     float input_rgb[3][4];
 } ge_fast3d_generic_vertex;

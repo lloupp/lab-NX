@@ -54,6 +54,8 @@ struct DekoProgram {
     bool env2tex;
     bool flat;
     bool alpha_combiner;
+    bool texedge;
+    bool alpha_threshold;
 };
 
 struct DekoTexture {
@@ -92,6 +94,8 @@ static struct {
     DkShader env_vsh;
     DkShader env_fsh;
     DkShader env_alpha_fsh;
+    DkShader env_edge_fsh;
+    DkShader env_thresh_fsh;
     DkShader flat_vsh;
     DkShader flat_fsh;
     DkImageView color_view;
@@ -248,6 +252,8 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
         !deko_load_shader(&g.env_vsh, deko_env2tex_vsh, deko_env2tex_vsh_len) ||
         !deko_load_shader(&g.env_fsh, deko_env2tex_fsh, deko_env2tex_fsh_len) ||
         !deko_load_shader(&g.env_alpha_fsh, deko_env2tex_alpha_fsh, deko_env2tex_alpha_fsh_len) ||
+        !deko_load_shader(&g.env_edge_fsh, deko_env2tex_edge_fsh, deko_env2tex_edge_fsh_len) ||
+        !deko_load_shader(&g.env_thresh_fsh, deko_env2tex_thresh_fsh, deko_env2tex_thresh_fsh_len) ||
         !deko_load_shader(&g.flat_vsh, deko_flat_vsh, deko_flat_vsh_len) ||
         !deko_load_shader(&g.flat_fsh, deko_flat_fsh, deko_flat_fsh_len)) {
         sysLogPrintf(LOG_ERROR, "deko3d: DKSH load failed");
@@ -427,6 +433,8 @@ static struct ShaderProgram *deko_create_shader(uint64_t id0, uint32_t id1)
     program->alpha_combiner = program->env2tex && features.opt_alpha &&
         features.color_alpha_same[1] &&
         !(features.do_single[1][1] && features.c[1][1][3] == SHADER_1);
+    program->texedge = features.opt_texture_edge;
+    program->alpha_threshold = features.opt_alpha_threshold;
     program->supported = (id0 == 0x1000u && id1 == 0u) || program->fogtex ||
                          program->env2tex || program->flat;
     if (g.programs <= 8 || program->supported) {
@@ -701,8 +709,9 @@ static void deko_stage_generic(const ge_fast3d_generic_vertex *data, size_t vert
     dkCmdBufBindVtxBuffers(g.cmd, 0, &extents, 1);
     const uint32_t stride = (uint32_t)sizeof(ge_fast3d_generic_vertex);
     const uint32_t tex_off = (uint32_t)offsetof(ge_fast3d_generic_vertex, texcoord);
+    const uint32_t clamp_off = (uint32_t)offsetof(ge_fast3d_generic_vertex, clamp);
     const uint32_t in_off = (uint32_t)offsetof(ge_fast3d_generic_vertex, input_rgb);
-    DkVtxAttribState attribs[7] = {
+    DkVtxAttribState attribs[9] = {
         {0, 0, (uint32_t)offsetof(ge_fast3d_generic_vertex, position), DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
         {0, 0, tex_off, DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
         {0, 0, tex_off + 8u, DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
@@ -710,9 +719,11 @@ static void deko_stage_generic(const ge_fast3d_generic_vertex *data, size_t vert
         {0, 0, in_off, DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
         {0, 0, in_off + 16u, DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
         {0, 0, in_off + 32u, DkVtxAttribSize_4x32, DkVtxAttribType_Float, 0},
+        {0, 0, clamp_off, DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
+        {0, 0, clamp_off + 8u, DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
     };
     DkVtxBufferState buffers[1] = {{stride, 0}};
-    dkCmdBufBindVtxAttribState(g.cmd, attribs, 7);
+    dkCmdBufBindVtxAttribState(g.cmd, attribs, 9);
     dkCmdBufBindVtxBufferState(g.cmd, buffers, 1);
     dkCmdBufDraw(g.cmd, DkPrimitive_Triangles, (uint32_t)vertices, 1, 0, 0);
     g.vertex_used = aligned + bytes;
@@ -835,8 +846,16 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
             g.skipped++;
             return;
         }
-        DkShader const *shaders[2] = {&g.env_vsh,
-            g.current->alpha_combiner ? &g.env_alpha_fsh : &g.env_fsh};
+        DkShader const *shaders[2] = {&g.env_vsh, &g.env_fsh};
+        if (g.current->alpha_combiner) {
+            if (g.current->alpha_threshold) {
+                shaders[1] = &g.env_thresh_fsh;
+            } else if (g.current->texedge) {
+                shaders[1] = &g.env_edge_fsh;
+            } else {
+                shaders[1] = &g.env_alpha_fsh;
+            }
+        }
         dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
         dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0, dkMakeTextureHandle(t0 - 1, 0));
         dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 1, dkMakeTextureHandle(t1 - 1, 1));

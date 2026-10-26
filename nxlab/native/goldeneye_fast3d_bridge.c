@@ -119,13 +119,15 @@ ge_fast3d_result ge_fast3d_unpack_generic(
         const float *src = vbo + i * per_vertex;
         ge_fast3d_generic_vertex *v = &dst[i];
         memset(v, 0, sizeof(*v));
+        v->clamp[0][0] = v->clamp[0][1] = -1.0f;
+        v->clamp[1][0] = v->clamp[1][1] = -1.0f;
         for (unsigned j = 0; j < 4; ++j) v->position[j] = *src++;
         for (unsigned t = 0; t < 2; ++t) {
             if (!(profile->textures_mask & (1u << t))) continue;
             v->texcoord[t][0] = *src++;
             v->texcoord[t][1] = *src++;
-            if (profile->shader_id1 & (1u << (8 + 2 * t))) src++;
-            if (profile->shader_id1 & (1u << (9 + 2 * t))) src++;
+            if (profile->shader_id1 & (1u << (8 + 2 * t))) v->clamp[t][0] = *src++;
+            if (profile->shader_id1 & (1u << (9 + 2 * t))) v->clamp[t][1] = *src++;
         }
         if (profile->use_fog) {
             for (unsigned j = 0; j < 4; ++j) v->fog[j] = *src++;

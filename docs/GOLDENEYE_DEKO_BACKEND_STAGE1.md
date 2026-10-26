@@ -1,4 +1,4 @@
-# GoldenEye NX — deko3d backend, stages 1–4 (2026-10-25)
+# GoldenEye NX — deko3d backend, stages 1–5 (2026-10-25/26)
 
 ## What this is
 
@@ -37,6 +37,9 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   `color_alpha_same` profiles (`020d020d…:13`), and a flat white shader for
   the no-texture `d000d00010001000:13` profile. The Dam aerial view renders
   through deko3d.
+- Stage 5 adds clamp-S/T limits per vertex (generic VBO clamp scalars drive
+  UV clamping in the env shaders) and texedge/alpha-threshold fragment
+  variants (`discard` at 0.5 or 8/256).
 - Depth (`Z24S8`, `LEQUAL`) and a clamped scissor: Fast3D can pass negative
   scissor rectangles, and `DkScissor` is unsigned, so the rectangle is clamped
   to the framebuffer before recording.
@@ -82,14 +85,16 @@ the backend and compiles the two DKSH programs with `uam`. Without
 
 ## Evidence
 
-Verification NRO (stage 4): 8,314,936 bytes, SHA-256
-`9898f76e5c149fa6f541df0b7daba91684ac8710784e42117cbfe23df4e153c0`.
+Verification NRO (stage 5): 8,319,032 bytes, SHA-256
+`f26b36cb092ea4aaecb12c686d311469fd4debefc483511596863594d3b6c604`.
 Patched deko3d: SHA-256
 `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
 
 Raw runs and the NRO are preserved outside Git in
 `007/goldeneye-deko-backend-20261025/`:
 
+- `run-20261026-114037-xtest/`: stage-5 Dam aerial view with
+  `stage5-clamp-edge-dam.png`.
 - `run-20261025-172002-xtest/`: stage-4 Dam aerial view with
   `stage4-alpha-combiner-dam.png` and the engine log.
 - `run-20261025-162838-xtest/`: stage-3 full Dam exterior with
@@ -107,9 +112,8 @@ Raw runs and the NRO are preserved outside Git in
 
 ## Next steps
 
-1. Remaining combiner paths: texture-edge (`opt_texture_edge`), noise,
-   exact clamp-S/T handling; check the black shape at the top of the aerial
-   frame.
+1. Unexplained black shape at the top of the aerial frame; noise dither
+   path not implemented.
 2. Depth/z validation and, later, MSAA and command-buffer double buffering.
 3. A CI job that builds the patched deko3d and the engine backend; the
    current workflows only build the GL engine.
