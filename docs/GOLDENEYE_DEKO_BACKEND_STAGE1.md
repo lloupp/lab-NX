@@ -44,13 +44,25 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   texture fallbacks for the remaining unsupported profiles; the sky/backdrop
   hole is filled. Aerial re-check: `stage6-aerial-confirmed.png` has no
   clear-colour pixels in the top region.
+- Stage 7 adds the cloud-sky combiner and per-texture sampler state. The sky
+  profile `0000000010002821:00000000` renders with
+  `mix(ENVIRONMENT, SHADE, TEXEL0)`, the
+  `(SHADE - ENVIRONMENT) * TEXEL0 + ENVIRONMENT` formula `src/game/sky.c`
+  emits. The flat blue itself was a sampler bug: Fast3D records wrap/filter
+  per *texture* (GL stores it on the texture object), but the backend kept
+  one sampler descriptor per unit, so the sky inherited the previous frame's
+  clamp mode and its UVs (well past 1.0) collapsed onto the last texel.
+  `mix(ENV, 1, 68/255) = (80,103,139)` matches the observed flat `(79,103,138)`
+  exactly. Samplers are now keyed by texture id, and texture uploads follow
+  `select_texture` (the GL built-in upload happens on the bound texture),
+  so recycled cache ids no longer write into a stale texture. The Dam sky
+  now shows the cloud tile instead of a flat plate.
 - Depth (`Z24S8`, `LEQUAL`) and a clamped scissor: Fast3D can pass negative
   scissor rectangles, and `DkScissor` is unsigned, so the rectangle is clamped
   to the framebuffer before recording.
 - `deko3d: frame N presented draws=... skipped=...` reports the split.
-  Skipped batches use the 2-texture environment combiner profiles
-  (`1000020d0000818a:13`, `320d020d818a818a:12`, `020d020d818a818a:13`,
-  `d000d00010001000:13`), which are not implemented yet.
+  Batches whose combiner is not modelled by a dedicated shader use the
+  generic 1-/2-texture fallbacks instead of being dropped.
 
 ## What is not implemented
 
@@ -58,6 +70,10 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   VBOs and clamp-S/T extras, but the fragment shaders approximate alpha with
   `tex0.a` and do not model every combiner alpha path. Some surfaces (large
   flat roof/fan geometry) still shade incorrectly.
+- **Mipmaps and noise.** Textures are uploaded as a single RGBA8 level and
+  the sampler never selects a mip, so minified surfaces (walkway grating,
+  distant cliffs) alias where GL's generated mip chain is smooth. The noise
+  dither path is not implemented.
 - **No-texture combiner variants** such as `d000d00010001000:13` are parsed
   but not shaded (skipped).
 - MSAA is forced to 1; the two-step GL resolve is not used by this backend.
@@ -91,6 +107,8 @@ the backend and compiles the two DKSH programs with `uam`. Without
 
 Verification NRO (stage 6): 8,319,032 bytes, SHA-256
 `9f1f89945f6e9ab12b0d9fc618c7a9ce224a11d85d3f79ee112684091f996909`.
+Stage 7 NRO: 8,319,032 bytes, SHA-256
+`4c0232bf5150d15ec9ba247cebdda781494fd038c11abd0c27a922d3efb7f8e5`.
 Patched deko3d: SHA-256
 `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
 
@@ -98,6 +116,8 @@ Raw runs and the NRO are preserved outside Git in
 `007/goldeneye-deko-backend-20261025/`:
 
 - `run-20261026-115644-xtest/`: stage-6 sky/backdrop view (`stage6-sky-backdrop-filled.png`).
+- Stage 7 Dam flyover with the cloud sky: `stage7-sky-clouds.png`, engine log
+  `stage7-sky-clouds-engine.log` (same folder).
 - `run-20261026-114037-xtest/`: stage-5 Dam aerial view with
   `stage5-clamp-edge-dam.png`.
 - `run-20261025-172002-xtest/`: stage-4 Dam aerial view with
@@ -118,8 +138,9 @@ Raw runs and the NRO are preserved outside Git in
 ## Next steps
 
 1. The aerial black shape was the clear colour through missing backdrop
-   geometry; fallback profiles now draw it (aerial re-check pending). Noise
-   dither path not implemented.
+   geometry (stage 6); the flat blue sky was sampler state leaking between
+   textures (stage 7). Both are fixed. Next: mipmap generation for minified
+   textures and the noise dither path.
 2. Depth/z validation and, later, MSAA and command-buffer double buffering.
-3. A CI job that builds the patched deko3d and the engine backend; the
-   current workflows only build the GL engine.
+3. The `deko3d-engine-build` CI job builds the patched deko3d and the engine
+   backend alongside the GL jobs.

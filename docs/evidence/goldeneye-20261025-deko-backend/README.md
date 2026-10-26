@@ -1,4 +1,4 @@
-# deko3d backend, stages 1–6, in the full engine — 2026-10-25
+# deko3d backend, stages 1–7, in the full engine — 2026-10-25
 
 ## Result
 
@@ -23,6 +23,16 @@ the facility are visible in `stage3-full-dam-textured.png`.
 - **Stage 5:** per-vertex clamp-S/T limits drive UV clamping in the env
   shaders; texedge/alpha-threshold fragment variants discard low-alpha
   texels (`stage5-clamp-edge-dam.png`).
+- **Stage 6:** `DkBlendState` for alpha surfaces and texture fallbacks for
+  the remaining profiles; the clear-colour hole above the dam is filled
+  (`stage6-aerial-confirmed.png`, `stage6-sky-backdrop-filled.png`).
+- **Stage 7:** the cloud-sky combiner
+  `mix(ENVIRONMENT, SHADE, TEXEL0)` plus per-texture sampler descriptors.
+  Fast3D records wrap/filter per texture (GL keeps it on the texture
+  object); the shared per-unit sampler clamped the sky's UVs to the last
+  texel, producing the flat blue plate. With sampler state keyed by texture
+  id — and uploads following `select_texture`, as GL's built-in upload does
+  — the Dam sky shows the cloud tile (`stage7-sky-clouds.png`).
 
 ## Evidence
 
@@ -31,6 +41,8 @@ the facility are visible in `stage3-full-dam-textured.png`.
 - Patched deko3d (dekotools MME upload): SHA-256
   `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
   The stock devkitPro `libdeko3d.a` fails at `dkQueueCreate` in Eden.
+- `stage7-sky-clouds.png`: Dam view with the cloud sky after the sampler
+  and combiner fix.
 - `stage6-aerial-confirmed.png`: aerial view with the former black hole filled.
 - `stage6-sky-backdrop-filled.png`: sky/backdrop geometry drawn again after
   the fallback profiles.
@@ -61,8 +73,8 @@ See `docs/GOLDENEYE_DEKO_BACKEND_STAGE1.md` for architecture and next steps.
 
 ## Remaining work
 
-- Noise dither path not implemented; the aerial black shape was the clear
-  colour through missing backdrop geometry and is re-checked with fallbacks.
+- Mipmaps are not generated (minified textures alias); noise dither path not
+  implemented.
 - MSAA is forced to 1; the `different_size` path is not exercised.
 - Input, audio and mission completion were not re-validated under the deko
   backend; the GL path remains the reference.
