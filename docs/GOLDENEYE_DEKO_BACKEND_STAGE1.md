@@ -1,4 +1,4 @@
-# GoldenEye NX — deko3d backend, stages 1–5 (2026-10-25/26)
+# GoldenEye NX — deko3d backend, stages 1–6 (2026-10-25/26)
 
 ## What this is
 
@@ -85,14 +85,15 @@ the backend and compiles the two DKSH programs with `uam`. Without
 
 ## Evidence
 
-Verification NRO (stage 5): 8,319,032 bytes, SHA-256
-`f26b36cb092ea4aaecb12c686d311469fd4debefc483511596863594d3b6c604`.
+Verification NRO (stage 6): 8,319,032 bytes, SHA-256
+`9f1f89945f6e9ab12b0d9fc618c7a9ce224a11d85d3f79ee112684091f996909`.
 Patched deko3d: SHA-256
 `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
 
 Raw runs and the NRO are preserved outside Git in
 `007/goldeneye-deko-backend-20261025/`:
 
+- `run-20261026-115644-xtest/`: stage-6 sky/backdrop view (`stage6-sky-backdrop-filled.png`).
 - `run-20261026-114037-xtest/`: stage-5 Dam aerial view with
   `stage5-clamp-edge-dam.png`.
 - `run-20261025-172002-xtest/`: stage-4 Dam aerial view with
@@ -112,8 +113,9 @@ Raw runs and the NRO are preserved outside Git in
 
 ## Next steps
 
-1. Unexplained black shape at the top of the aerial frame; noise dither
-   path not implemented.
+1. The aerial black shape was the clear colour through missing backdrop
+   geometry; fallback profiles now draw it (aerial re-check pending). Noise
+   dither path not implemented.
 2. Depth/z validation and, later, MSAA and command-buffer double buffering.
 3. A CI job that builds the patched deko3d and the engine backend; the
    current workflows only build the GL engine.

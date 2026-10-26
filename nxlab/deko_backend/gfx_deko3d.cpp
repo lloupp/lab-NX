@@ -56,6 +56,8 @@ struct DekoProgram {
     bool alpha_combiner;
     bool texedge;
     bool alpha_threshold;
+    bool tex0_fallback;
+    bool texmix_fallback;
 };
 
 struct DekoTexture {
@@ -98,6 +100,8 @@ static struct {
     DkShader env_thresh_fsh;
     DkShader flat_vsh;
     DkShader flat_fsh;
+    DkShader tex0_fsh;
+    DkShader texmix_fsh;
     DkImageView color_view;
     DkImageView depth_view;
     DkCmdList frame_cmd;
@@ -109,6 +113,7 @@ static struct {
     bool depth_test;
     bool depth_write;
     bool alpha;
+    bool modulate;
     size_t vertex_used;
     unsigned draws;
     unsigned skipped;
@@ -255,7 +260,9 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
         !deko_load_shader(&g.env_edge_fsh, deko_env2tex_edge_fsh, deko_env2tex_edge_fsh_len) ||
         !deko_load_shader(&g.env_thresh_fsh, deko_env2tex_thresh_fsh, deko_env2tex_thresh_fsh_len) ||
         !deko_load_shader(&g.flat_vsh, deko_flat_vsh, deko_flat_vsh_len) ||
-        !deko_load_shader(&g.flat_fsh, deko_flat_fsh, deko_flat_fsh_len)) {
+        !deko_load_shader(&g.flat_fsh, deko_flat_fsh, deko_flat_fsh_len) ||
+        !deko_load_shader(&g.tex0_fsh, deko_tex0_fsh, deko_tex0_fsh_len) ||
+        !deko_load_shader(&g.texmix_fsh, deko_texmix_fsh, deko_texmix_fsh_len)) {
         sysLogPrintf(LOG_ERROR, "deko3d: DKSH load failed");
         return false;
     }
@@ -377,6 +384,13 @@ static void deko_apply_states(void)
         dkColorStateSetBlendEnable(&color, 0, true);
     }
     dkCmdBufBindColorState(g.cmd, &color);
+    DkBlendState blend;
+    dkBlendStateDefaults(&blend);
+    if (g.modulate) {
+        dkBlendStateSetFactors(&blend, DkBlendFactor_DstColor, DkBlendFactor_Zero,
+                               DkBlendFactor_One, DkBlendFactor_Zero);
+    }
+    dkCmdBufBindBlendState(g.cmd, 0, &blend);
     DkColorWriteState write;
     dkColorWriteStateDefaults(&write);
     dkCmdBufBindColorWriteState(g.cmd, &write);
@@ -437,6 +451,14 @@ static struct ShaderProgram *deko_create_shader(uint64_t id0, uint32_t id1)
     program->alpha_threshold = features.opt_alpha_threshold;
     program->supported = (id0 == 0x1000u && id1 == 0u) || program->fogtex ||
                          program->env2tex || program->flat;
+    if (!program->supported) {
+        if (features.used_textures[0] && !features.used_textures[1] && features.num_inputs >= 1) {
+            program->tex0_fallback = true;
+        } else if (features.used_textures[0] && features.used_textures[1]) {
+            program->texmix_fallback = true;
+        }
+        program->supported = program->tex0_fallback || program->texmix_fallback;
+    }
     if (g.programs <= 8 || program->supported) {
         sysLogPrintf(LOG_NOTE, "deko3d: shader %016llx:%08x inputs=%u tex=%u:%u fogtex=%d env=%d flat=%d ac=%d supported=%d",
                      (unsigned long long)id0, id1, program->num_inputs,
@@ -632,8 +654,8 @@ static void deko_scissor(int x, int y, int width, int height)
 
 static void deko_use_alpha(bool use, bool modulate)
 {
-    (void)modulate;
     g.alpha = use;
+    g.modulate = modulate;
     if (g.in_frame) {
         deko_apply_states();
     }
@@ -790,6 +812,51 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0,
                             dkMakeTextureHandle(texture_id - 1, 0));
         deko_stage_fogtex(scratch, written);
+        free(scratch);
+        return;
+    }
+    if (g.current->tex0_fallback || g.current->texmix_fallback) {
+        ge_fast3d_profile profile = {
+            g.current->num_inputs,
+            (unsigned)((g.current->used_textures[0] ? 1u : 0u) | (g.current->used_textures[1] ? 2u : 0u)),
+            (g.current->id1 & SHADER_OPT_ALPHA) ? 1u : 0u,
+            (g.current->id1 & SHADER_OPT_FOG) ? 1u : 0u,
+            (g.current->id1 & SHADER_OPT_GRAYSCALE) ? 1u : 0u,
+            g.current->id0, g.current->id1
+        };
+        size_t written = 0;
+        ge_fast3d_generic_vertex *scratch =
+            (ge_fast3d_generic_vertex *)malloc(vertices * sizeof(*scratch));
+        if (!scratch) {
+            g.skipped++;
+            return;
+        }
+        if (ge_fast3d_unpack_generic(vbo, vbo_len, triangles, &profile, scratch,
+                                     vertices, &written) != GE_F3D_OK ||
+            written != vertices) {
+            free(scratch);
+            g.skipped++;
+            return;
+        }
+        uint32_t t0 = g.selected_id[0];
+        uint32_t t1 = g.selected_id[1];
+        if (t0 == 0 || t0 > GE_DEKO_MAX_TEXTURES || !g.textures[t0 - 1].ready) {
+            free(scratch);
+            g.skipped++;
+            return;
+        }
+        if (g.current->texmix_fallback &&
+            (t1 == 0 || t1 > GE_DEKO_MAX_TEXTURES || !g.textures[t1 - 1].ready)) {
+            t1 = t0;
+        }
+        DkShader const *shaders[2] = {&g.env_vsh,
+            g.current->texmix_fallback ? &g.texmix_fsh : &g.tex0_fsh};
+        dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
+        dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0, dkMakeTextureHandle(t0 - 1, 0));
+        if (g.current->texmix_fallback) {
+            dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 1, dkMakeTextureHandle(t1 - 1, 1));
+        }
+        deko_stage_generic(scratch, written);
         free(scratch);
         return;
     }

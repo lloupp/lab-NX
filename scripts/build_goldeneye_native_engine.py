@@ -101,6 +101,10 @@ def main():
             ROOT / "nxlab/deko_backend/shaders/env2tex_edge_fsh.glsl")
         run(uam, "-s", "frag", "-o", shader_dir / "env2tex_thresh_fsh.dksh",
             ROOT / "nxlab/deko_backend/shaders/env2tex_thresh_fsh.glsl")
+        run(uam, "-s", "frag", "-o", shader_dir / "tex0_fsh.dksh",
+            ROOT / "nxlab/deko_backend/shaders/tex0_fsh.glsl")
+        run(uam, "-s", "frag", "-o", shader_dir / "texmix_fsh.dksh",
+            ROOT / "nxlab/deko_backend/shaders/texmix_fsh.glsl")
         run(uam, "-s", "vert", "-o", shader_dir / "flat_vsh.dksh",
             ROOT / "nxlab/deko_backend/shaders/flat_vsh.glsl")
         run(uam, "-s", "frag", "-o", shader_dir / "flat_fsh.dksh",
@@ -122,6 +126,8 @@ def main():
                   + emit("deko_env2tex_alpha_fsh", shader_dir / "env2tex_alpha_fsh.dksh")
                   + emit("deko_env2tex_edge_fsh", shader_dir / "env2tex_edge_fsh.dksh")
                   + emit("deko_env2tex_thresh_fsh", shader_dir / "env2tex_thresh_fsh.dksh")
+                  + emit("deko_tex0_fsh", shader_dir / "tex0_fsh.dksh")
+                  + emit("deko_texmix_fsh", shader_dir / "texmix_fsh.dksh")
                   + emit("deko_flat_vsh", shader_dir / "flat_vsh.dksh")
                   + emit("deko_flat_fsh", shader_dir / "flat_fsh.dksh"))
         (source / "port/fast3d/deko_shader_bytes.h").write_text(header)
