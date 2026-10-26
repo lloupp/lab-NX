@@ -1,4 +1,4 @@
-# deko3d backend, stages 1–7, in the full engine — 2026-10-25
+# deko3d backend, stages 1–8, in the full engine — 2026-10-25
 
 ## Result
 
@@ -33,14 +33,27 @@ the facility are visible in `stage3-full-dam-textured.png`.
   texel, producing the flat blue plate. With sampler state keyed by texture
   id — and uploads following `select_texture`, as GL's built-in upload does
   — the Dam sky shows the cloud tile (`stage7-sky-clouds.png`).
+- **Stage 8:** mipmaps for minified textures. The full block-linear chain is
+  box filtered on the CPU into a linear staging buffer and copied level by
+  level with `dkCmdBufCopyBufferToImage`; the sampler uses
+  `DkMipFilter_Linear` with the LOD clamped to the chain. The dam wall and
+  the canyon cliffs lose the large moiré pattern
+  (`stage8-mips-dam-wall.png`, `stage8-mips-cliffs.png`; the pre-mip build's
+  aliasing is visible in `stage7-mips-off-cliffs.png`).
 
 ## Evidence
 
+- Stage-8 NRO: 8,323,128 bytes, SHA-256
+  `b0958ffe124ff12f1e6eb7bb111d15d3ca78f6cc342ca84973db7020bca8eae0`.
 - Stage-6 NRO: 8,319,032 bytes, SHA-256
   `9f1f89945f6e9ab12b0d9fc618c7a9ce224a11d85d3f79ee112684091f996909`.
 - Patched deko3d (dekotools MME upload): SHA-256
   `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
   The stock devkitPro `libdeko3d.a` fails at `dkQueueCreate` in Eden.
+- `stage8-mips-dam-wall.png`: Dam flyover with the wall smooth (no moiré).
+- `stage8-mips-cliffs.png`: canyon cliffs and grating with the mip chain.
+- `stage7-mips-off-cliffs.png`: the same style of canyon view before mipmaps,
+  with the aliased "fingerprint" cliffs (stage-7 build).
 - `stage7-sky-clouds.png`: Dam view with the cloud sky after the sampler
   and combiner fix.
 - `stage6-aerial-confirmed.png`: aerial view with the former black hole filled.
@@ -73,8 +86,8 @@ See `docs/GOLDENEYE_DEKO_BACKEND_STAGE1.md` for architecture and next steps.
 
 ## Remaining work
 
-- Mipmaps are not generated (minified textures alias); noise dither path not
-  implemented.
+- Noise dither path not implemented; no-texture combiner variant
+  `d000d00010001000:13` is skipped.
 - MSAA is forced to 1; the `different_size` path is not exercised.
 - Input, audio and mission completion were not re-validated under the deko
   backend; the GL path remains the reference.
