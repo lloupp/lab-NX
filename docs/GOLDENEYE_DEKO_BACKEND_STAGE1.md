@@ -57,6 +57,17 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   `select_texture` (the GL built-in upload happens on the bound texture),
   so recycled cache ids no longer write into a stale texture. The Dam sky
   now shows the cloud tile instead of a flat plate.
+- Stage 8 generates mipmaps. Fast3D requests them on many world textures
+  (`gen_mipmaps` = RDP LOD enable); without a chain the minified walkway
+  grating, dam wall and cliffs alias into large moiré patterns where GL is
+  smooth. deko3d pitch-linear images cannot carry more than one level, so
+  mipmapped textures are created block-linear with the full chain, box
+  filtered on the CPU into an 8 MiB linear staging buffer, and copied level
+  by level with `dkCmdBufCopyBufferToImage`. The sampler switches to
+  `DkMipFilter_Linear` and clamps the LOD to the chain. GPU mip generation
+  with `dkCmdBufBlitImage` left the tiled destination levels uninitialised
+  under Eden, so every level uses the copy path (which the base level
+  already exercised).
 - Depth (`Z24S8`, `LEQUAL`) and a clamped scissor: Fast3D can pass negative
   scissor rectangles, and `DkScissor` is unsigned, so the rectangle is clamped
   to the framebuffer before recording.
@@ -70,11 +81,8 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
   VBOs and clamp-S/T extras, but the fragment shaders approximate alpha with
   `tex0.a` and do not model every combiner alpha path. Some surfaces (large
   flat roof/fan geometry) still shade incorrectly.
-- **Mipmaps and noise.** Textures are uploaded as a single RGBA8 level and
-  the sampler never selects a mip, so minified surfaces (walkway grating,
-  distant cliffs) alias where GL's generated mip chain is smooth. The noise
-  dither path is not implemented.
-- **No-texture combiner variants** such as `d000d00010001000:13` are parsed
+- **Noise and combiner variants.** The noise dither path is not implemented.
+  No-texture combiner variants such as `d000d00010001000:13` are parsed
   but not shaded (skipped).
 - MSAA is forced to 1; the two-step GL resolve is not used by this backend.
 - The `different_size` render path is not exercised.
@@ -109,6 +117,8 @@ Verification NRO (stage 6): 8,319,032 bytes, SHA-256
 `9f1f89945f6e9ab12b0d9fc618c7a9ce224a11d85d3f79ee112684091f996909`.
 Stage 7 NRO: 8,319,032 bytes, SHA-256
 `4c0232bf5150d15ec9ba247cebdda781494fd038c11abd0c27a922d3efb7f8e5`.
+Stage 8 NRO: 8,323,128 bytes, SHA-256
+`b0958ffe124ff12f1e6eb7bb111d15d3ca78f6cc342ca84973db7020bca8eae0`.
 Patched deko3d: SHA-256
 `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
 
@@ -118,6 +128,9 @@ Raw runs and the NRO are preserved outside Git in
 - `run-20261026-115644-xtest/`: stage-6 sky/backdrop view (`stage6-sky-backdrop-filled.png`).
 - Stage 7 Dam flyover with the cloud sky: `stage7-sky-clouds.png`, engine log
   `stage7-sky-clouds-engine.log` (same folder).
+- Stage 8 mipmaps: `stage8-mips-dam-wall.png` (smooth dam wall),
+  `stage8-mips-cliffs.png` (cliffs + grating), and the pre-mip aliasing in
+  `stage7-mips-off-cliffs.png`.
 - `run-20261026-114037-xtest/`: stage-5 Dam aerial view with
   `stage5-clamp-edge-dam.png`.
 - `run-20261025-172002-xtest/`: stage-4 Dam aerial view with
@@ -139,8 +152,9 @@ Raw runs and the NRO are preserved outside Git in
 
 1. The aerial black shape was the clear colour through missing backdrop
    geometry (stage 6); the flat blue sky was sampler state leaking between
-   textures (stage 7). Both are fixed. Next: mipmap generation for minified
-   textures and the noise dither path.
+   textures (stage 7); minified-surface moiré is fixed by the mip chain
+   (stage 8). Next: the noise dither path and the remaining combiner
+   variants.
 2. Depth/z validation and, later, MSAA and command-buffer double buffering.
 3. The `deko3d-engine-build` CI job builds the patched deko3d and the engine
    backend alongside the GL jobs.

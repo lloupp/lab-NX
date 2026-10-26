@@ -41,6 +41,7 @@ extern "C" void videoRequestQuit(const char *why);
 #define GE_DEKO_CODE_BYTES (64u * 1024u)
 #define GE_DEKO_CMD_BYTES (256u * 1024u)
 #define GE_DEKO_VERTEX_BYTES (2u * 1024u * 1024u)
+#define GE_DEKO_STAGING_BYTES (8u * 1024u * 1024u)
 #define GE_DEKO_MAX_PROGRAMS 64
 #define GE_DEKO_MAX_TEXTURES 256
 
@@ -66,6 +67,7 @@ struct DekoTexture {
     DkMemBlock mem;
     DkImageView view;
     uint32_t width, height;
+    uint32_t mip_levels;
     bool ready;
 };
 
@@ -78,6 +80,10 @@ static struct {
     DkMemBlock depth_mem;
     DkMemBlock code_mem;
     DkMemBlock vertex_mem;
+    DkMemBlock staging_mem;
+    uint32_t staging_used;
+    DkMemBlock retired_mem[64];
+    uint32_t retired_count;
     DkMemBlock cmd_mem;
     DkMemBlock desc_mem;
     DkImageDescriptor *image_desc;
@@ -278,6 +284,19 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
         sysLogPrintf(LOG_ERROR, "deko3d: vertex memory failed");
         return false;
     }
+
+    /* Linear staging for texture uploads. Mipmapped images are block-linear
+     * (pitch-linear cannot have mips), so the CPU copy goes through the blit
+     * engine with a mip chain blitted level by level. Reset per frame after
+     * the queue wait. */
+    sysLogPrintf(LOG_NOTE, "deko3d: upload staging %u bytes", (unsigned)GE_DEKO_STAGING_BYTES);
+    dkMemBlockMakerDefaults(&memory_maker, g.device, GE_DEKO_STAGING_BYTES);
+    memory_maker.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached;
+    g.staging_mem = dkMemBlockCreate(&memory_maker);
+    if (!g.staging_mem) {
+        sysLogPrintf(LOG_WARNING, "deko3d: upload staging failed; textures stay pitch-linear without mips");
+    }
+    g.staging_used = 0;
 
     sysLogPrintf(LOG_NOTE, "deko3d: command memory %u bytes", (unsigned)GE_DEKO_CMD_BYTES);
     const uint32_t image_desc_bytes = GE_DEKO_MAX_TEXTURES * (uint32_t)sizeof(DkImageDescriptor);
@@ -556,28 +575,97 @@ static void deko_select_texture(int tile, uint32_t texture_id, bool linear_filte
     }
 }
 
+static uint32_t deko_mip_count(uint32_t width, uint32_t height)
+{
+    /* The descriptor stores at most 16 mip levels. */
+    uint32_t levels = 1;
+    while ((width > 1 || height > 1) && levels < 16) {
+        width = width > 1 ? width >> 1 : 1;
+        height = height > 1 ? height >> 1 : 1;
+        ++levels;
+    }
+    return levels;
+}
+
+static void deko_retire_texture_mem(DkMemBlock mem)
+{
+    if (!mem) {
+        return;
+    }
+    /* The command buffer is recorded ahead of submission, so a texture that
+     * is re-uploaded or evicted mid-frame can still be referenced by queued
+     * copy/blit/draw commands. Keep its memory alive until the next frame has
+     * waited out the previous submission. */
+    if (g.retired_count < (uint32_t)(sizeof(g.retired_mem) / sizeof(g.retired_mem[0]))) {
+        g.retired_mem[g.retired_count++] = mem;
+    } else {
+        dkMemBlockDestroy(mem);
+    }
+}
+
 static void deko_upload_texture(const uint8_t *rgba32, uint32_t width, uint32_t height, bool gen_mipmaps)
 {
-    (void)gen_mipmaps;
     const uint32_t id = g.upload_id;
     if (!rgba32 || !width || !height || id == 0 || id > GE_DEKO_MAX_TEXTURES) {
         return;
     }
     DekoTexture &tex = g.textures[id - 1];
     if (tex.mem) {
-        dkMemBlockDestroy(tex.mem);
+        deko_retire_texture_mem(tex.mem);
         tex.mem = nullptr;
         tex.ready = false;
     }
+    tex.mip_levels = 0;
+    /* Pitch-linear images cannot carry mipmaps (deko3d rejects
+     * mipLevels > 1), so mipmapped textures use the default block-linear
+     * layout. Fast3D asks for mipmaps on many world textures; without them
+     * the minified grating and cliffs alias badly where GL's mip chain is
+     * smooth. Each level is box-filtered on the CPU into the staging buffer
+     * and copied into the image by the copy engine (the same path as the
+     * base level); GPU blits are avoided because their tiled destination
+     * came out uninitialised/garbled under Eden. */
+    const uint32_t mip_count = gen_mipmaps ? deko_mip_count(width, height) : 1;
+    const uint32_t pitch_stride = (width * 4u + DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1u)
+                                & ~(DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1u);
+    uint32_t level_w[16] = {0}, level_h[16] = {0}, level_stride[16] = {0};
+    uint64_t level_off[16] = {0};
+    uint64_t staging_total = 0;
+    bool tiled = false;
+    uint32_t staging_base = 0;
+    if (mip_count > 1 && g.staging_mem && g.in_frame) {
+        uint64_t total = 0;
+        uint32_t w = width, h = height;
+        for (uint32_t level = 0; level < mip_count; ++level) {
+            level_w[level] = w;
+            level_h[level] = h;
+            level_stride[level] = (w * 4u + DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1u)
+                                & ~(DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1u);
+            const uint32_t aligned = (uint32_t)((total + 31u) & ~31u);
+            level_off[level] = aligned;
+            total = aligned + (uint64_t)level_stride[level] * h;
+            w = w > 1 ? w >> 1 : 1;
+            h = h > 1 ? h >> 1 : 1;
+        }
+        const uint32_t base = (g.staging_used + 31u) & ~31u;
+        if ((uint64_t)base + total <= GE_DEKO_STAGING_BYTES) {
+            tiled = true;
+            staging_base = base;
+            staging_total = total;
+        }
+    }
+
     DkImageLayoutMaker lm;
     dkImageLayoutMakerDefaults(&lm, g.device);
-    lm.flags = DkImageFlags_PitchLinear;
     lm.format = DkImageFormat_RGBA8_Unorm;
     lm.dimensions[0] = width;
     lm.dimensions[1] = height;
-    const uint32_t stride = (width * 4u + DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1u)
-                          & ~(DK_IMAGE_LINEAR_STRIDE_ALIGNMENT - 1u);
-    lm.pitchStride = stride;
+    if (tiled) {
+        lm.mipLevels = mip_count;
+    } else {
+        lm.flags = DkImageFlags_PitchLinear;
+        lm.mipLevels = 1;
+        lm.pitchStride = pitch_stride;
+    }
     DkImageLayout layout;
     dkImageLayoutInitialize(&layout, &lm);
     uint64_t size = dkImageLayoutGetSize(&layout);
@@ -598,18 +686,71 @@ static void deko_upload_texture(const uint8_t *rgba32, uint32_t width, uint32_t 
         tex.mem = nullptr;
         return;
     }
-    for (uint32_t row = 0; row < height; ++row) {
-        memcpy(cpu + (size_t)row * stride, rgba32 + (size_t)row * width * 4u, (size_t)width * 4u);
+    if (tiled) {
+        uint8_t *staging = (uint8_t *)dkMemBlockGetCpuAddr(g.staging_mem) + staging_base;
+        for (uint32_t row = 0; row < height; ++row) {
+            memcpy(staging + (size_t)row * level_stride[0],
+                   rgba32 + (size_t)row * width * 4u, (size_t)width * 4u);
+        }
+        dkImageInitialize(&tex.image, &layout, tex.mem, 0);
+        dkImageViewDefaults(&tex.view, &tex.image);
+        for (uint32_t level = 0; level < mip_count; ++level) {
+            if (level > 0) {
+                const uint8_t *src = staging + level_off[level - 1];
+                uint8_t *dst = staging + level_off[level];
+                const uint32_t sw = level_stride[level - 1];
+                const uint32_t pw = level_w[level - 1], ph = level_h[level - 1];
+                const uint32_t mw = level_w[level], mh = level_h[level];
+                const uint32_t dw = level_stride[level];
+                for (uint32_t y = 0; y < mh; ++y) {
+                    for (uint32_t x = 0; x < mw; ++x) {
+                        uint32_t acc[4] = {0, 0, 0, 0}, n = 0;
+                        for (uint32_t dy = 0; dy < 2; ++dy) {
+                            const uint32_t sy = y * 2u + dy;
+                            if (sy >= ph) continue;
+                            for (uint32_t dx = 0; dx < 2; ++dx) {
+                                const uint32_t sx = x * 2u + dx;
+                                if (sx >= pw) continue;
+                                const uint8_t *p = src + (size_t)sy * sw + (size_t)sx * 4u;
+                                for (int c = 0; c < 4; ++c) acc[c] += p[c];
+                                ++n;
+                            }
+                        }
+                        uint8_t *q = dst + (size_t)y * dw + (size_t)x * 4u;
+                        for (int c = 0; c < 4; ++c) q[c] = (uint8_t)(acc[c] / (n ? n : 1));
+                    }
+                }
+            }
+            DkImageView level_view = tex.view;
+            level_view.mipLevelOffset = (uint8_t)level;
+            level_view.mipLevelCount = 1;
+            DkImageRect rect = {0, 0, 0, level_w[level], level_h[level], 1};
+            DkCopyBuf level_buf = {
+                dkMemBlockGetGpuAddr(g.staging_mem) + staging_base + (uint32_t)level_off[level],
+                level_stride[level],
+                (uint32_t)((uint64_t)level_stride[level] * level_h[level])
+            };
+            dkCmdBufCopyBufferToImage(g.cmd, &level_buf, &level_view, &rect, 0);
+        }
+        g.staging_used = staging_base + (uint32_t)staging_total;
+        tex.mip_levels = mip_count;
+    } else {
+        for (uint32_t row = 0; row < height; ++row) {
+            memcpy(cpu + (size_t)row * pitch_stride,
+                   rgba32 + (size_t)row * width * 4u, (size_t)width * 4u);
+        }
+        dkImageInitialize(&tex.image, &layout, tex.mem, 0);
+        dkImageViewDefaults(&tex.view, &tex.image);
+        tex.mip_levels = 1;
     }
-    dkImageInitialize(&tex.image, &layout, tex.mem, 0);
-    dkImageViewDefaults(&tex.view, &tex.image);
     tex.width = width;
     tex.height = height;
     tex.ready = true;
     dkImageDescriptorInitialize(&g.image_desc[id - 1], &tex.view, false, false);
     static unsigned logged;
     if (logged++ < 8) {
-        sysLogPrintf(LOG_NOTE, "deko3d: texture %u uploaded %ux%u", id, width, height);
+        sysLogPrintf(LOG_NOTE, "deko3d: texture %u uploaded %ux%u mips=%u%s", id, width, height,
+                     tex.mip_levels, tiled ? " tiled" : " pitch");
     }
 }
 
@@ -625,10 +766,14 @@ static void deko_sampler_parameters(int sampler, bool linear_filter, uint32_t cm
     if (texture_id == 0 || texture_id > GE_DEKO_MAX_TEXTURES) {
         return;
     }
+    const DekoTexture &tex = g.textures[texture_id - 1];
+    const bool has_mips = tex.ready && tex.mip_levels > 1;
     DkSampler s;
     dkSamplerDefaults(&s);
     s.minFilter = linear_filter ? DkFilter_Linear : DkFilter_Nearest;
     s.magFilter = linear_filter ? DkFilter_Linear : DkFilter_Nearest;
+    s.mipFilter = has_mips ? DkMipFilter_Linear : DkMipFilter_None;
+    s.lodClampMax = has_mips ? (float)(tex.mip_levels - 1) : 0.0f;
     s.wrapMode[0] = deko_wrap_mode(cms);
     s.wrapMode[1] = deko_wrap_mode(cmt);
     s.wrapMode[2] = DkWrapMode_Repeat;
@@ -780,6 +925,23 @@ static void deko_stage_generic(const ge_fast3d_generic_vertex *data, size_t vert
     g.draws++;
 }
 
+static void deko_skip_draw(const char *why)
+{
+    static unsigned logged;
+    /* draw_triangles fires before the first shader is bound; that is normal
+     * startup behaviour and would otherwise drown the interesting skips. */
+    if (strcmp(why, "no-current") != 0 && logged++ < 24) {
+        sysLogPrintf(LOG_NOTE, "deko3d skip: %s profile=%016llx:%08x texture0=%u ready=%d",
+                     why,
+                     g.current ? (unsigned long long)g.current->id0 : 0ull,
+                     g.current ? g.current->id1 : 0u,
+                     g.selected_id[0],
+                     (g.selected_id[0] > 0 && g.selected_id[0] <= GE_DEKO_MAX_TEXTURES)
+                         ? (g.textures[g.selected_id[0] - 1].ready ? 1 : 0) : -1);
+    }
+    g.skipped++;
+}
+
 static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
 {
     static unsigned debug_draws;
@@ -793,7 +955,7 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
                      triangles, vbo_len);
     }
     if (!g.in_frame || !g.current || !g.current->supported || !triangles || !vbo) {
-        g.skipped++;
+        deko_skip_draw(!g.in_frame ? "not-in-frame" : (!g.current ? "no-current" : (!g.current->supported ? "unsupported" : "empty")));
         return;
     }
     const size_t vertices = triangles * 3u;
@@ -834,7 +996,7 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         if (texture_id == 0 || texture_id > GE_DEKO_MAX_TEXTURES ||
             !g.textures[texture_id - 1].ready) {
             free(scratch);
-            g.skipped++;
+            deko_skip_draw("fogtex-texture-not-ready");
             return;
         }
         dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0,
@@ -862,7 +1024,7 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         const uint32_t t0 = g.selected_id[0];
         if (t0 == 0 || t0 > GE_DEKO_MAX_TEXTURES || !g.textures[t0 - 1].ready) {
             free(scratch);
-            g.skipped++;
+            deko_skip_draw("sky-texture-not-ready");
             return;
         }
         static unsigned logged_sky;
@@ -909,7 +1071,7 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         uint32_t t1 = g.selected_id[1];
         if (t0 == 0 || t0 > GE_DEKO_MAX_TEXTURES || !g.textures[t0 - 1].ready) {
             free(scratch);
-            g.skipped++;
+            deko_skip_draw("tex0-texture-not-ready");
             return;
         }
         if (g.current->texmix_fallback &&
@@ -940,7 +1102,7 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
                                      vertices, &written) != GE_F3D_OK ||
             written != vertices) {
             free(scratch);
-            g.skipped++;
+            deko_skip_draw("flat-unpack");
             return;
         }
         DkShader const *shaders[2] = {&g.flat_vsh, &g.flat_fsh};
@@ -977,6 +1139,13 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         if (!t0 || !t1 || t0 > GE_DEKO_MAX_TEXTURES || t1 > GE_DEKO_MAX_TEXTURES ||
             !g.textures[t0 - 1].ready || !g.textures[t1 - 1].ready) {
             free(scratch);
+            static unsigned logged_env_skip;
+            if (logged_env_skip++ < 24) {
+                sysLogPrintf(LOG_NOTE, "deko3d skip: env-texture-not-ready t0=%u ready0=%d t1=%u ready1=%d profile=%016llx:%08x",
+                             t0, (t0 > 0 && t0 <= GE_DEKO_MAX_TEXTURES) ? (g.textures[t0-1].ready ? 1 : 0) : -1,
+                             t1, (t1 > 0 && t1 <= GE_DEKO_MAX_TEXTURES) ? (g.textures[t1-1].ready ? 1 : 0) : -1,
+                             (unsigned long long)g.current->id0, g.current->id1);
+            }
             g.skipped++;
             return;
         }
@@ -1036,6 +1205,13 @@ static void deko_api_start_frame(void)
     dkCmdBufClear(g.cmd);
     g.in_frame = true;
     g.vertex_used = 0;
+    /* wm_start_frame already waited out the previous submission, so textures
+     * retired last frame and the upload staging buffer are free to reuse. */
+    for (uint32_t i = 0; i < g.retired_count; ++i) {
+        dkMemBlockDestroy(g.retired_mem[i]);
+    }
+    g.retired_count = 0;
+    g.staging_used = 0;
     g.draws = 0;
     g.skipped = 0;
     dkCmdBufBindImageDescriptorSet(g.cmd, g.image_desc_gpu, GE_DEKO_MAX_TEXTURES);
@@ -1115,7 +1291,7 @@ static void deko_delete_texture(uint32_t texture_id)
     if (texture_id == 0 || texture_id > GE_DEKO_MAX_TEXTURES) return;
     DekoTexture &tex = g.textures[texture_id - 1];
     if (tex.mem) {
-        dkMemBlockDestroy(tex.mem);
+        deko_retire_texture_mem(tex.mem);
         tex.mem = nullptr;
         tex.ready = false;
     }
@@ -1201,6 +1377,18 @@ static void wm_close(void)
     }
     if (g.cmd_mem) { dkMemBlockDestroy(g.cmd_mem); g.cmd_mem = nullptr; }
     if (g.vertex_mem) { dkMemBlockDestroy(g.vertex_mem); g.vertex_mem = nullptr; }
+    if (g.staging_mem) { dkMemBlockDestroy(g.staging_mem); g.staging_mem = nullptr; }
+    for (uint32_t i = 0; i < g.retired_count; ++i) {
+        dkMemBlockDestroy(g.retired_mem[i]);
+    }
+    g.retired_count = 0;
+    for (uint32_t i = 0; i < GE_DEKO_MAX_TEXTURES; ++i) {
+        if (g.textures[i].mem) {
+            dkMemBlockDestroy(g.textures[i].mem);
+            g.textures[i].mem = nullptr;
+            g.textures[i].ready = false;
+        }
+    }
     if (g.code_mem) { dkMemBlockDestroy(g.code_mem); g.code_mem = nullptr; }
     if (g.depth_mem) { dkMemBlockDestroy(g.depth_mem); g.depth_mem = nullptr; }
     if (g.swapchain) { dkSwapchainDestroy(g.swapchain); g.swapchain = nullptr; }
