@@ -58,6 +58,7 @@ struct DekoProgram {
     bool texedge;
     bool alpha_threshold;
     bool sky;
+    bool noise;
     bool tex0_fallback;
     bool texmix_fallback;
 };
@@ -82,6 +83,10 @@ static struct {
     DkMemBlock vertex_mem;
     DkMemBlock staging_mem;
     uint32_t staging_used;
+    DkMemBlock ubo_mem;
+    DkGpuAddr ubo_addr;
+    uint32_t frame_count;
+    float noise_scale;
     DkMemBlock retired_mem[64];
     uint32_t retired_count;
     DkMemBlock cmd_mem;
@@ -104,10 +109,14 @@ static struct {
     DkShader env_fsh;
     DkShader env_alpha_fsh;
     DkShader env_edge_fsh;
+    DkShader env_edge_noise_fsh;
+    DkShader env_alpha_noise_fsh;
     DkShader env_thresh_fsh;
     DkShader flat_vsh;
     DkShader flat_fsh;
     DkShader sky_fsh;
+    DkShader tex0_noise_fsh;
+    DkShader tex0_noise_edge_fsh;
     DkShader tex0_fsh;
     DkShader texmix_fsh;
     DkImageView color_view;
@@ -266,10 +275,14 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
         !deko_load_shader(&g.env_fsh, deko_env2tex_fsh, deko_env2tex_fsh_len) ||
         !deko_load_shader(&g.env_alpha_fsh, deko_env2tex_alpha_fsh, deko_env2tex_alpha_fsh_len) ||
         !deko_load_shader(&g.env_edge_fsh, deko_env2tex_edge_fsh, deko_env2tex_edge_fsh_len) ||
+        !deko_load_shader(&g.env_edge_noise_fsh, deko_env2tex_edge_noise_fsh, deko_env2tex_edge_noise_fsh_len) ||
+        !deko_load_shader(&g.env_alpha_noise_fsh, deko_env2tex_alpha_noise_fsh, deko_env2tex_alpha_noise_fsh_len) ||
         !deko_load_shader(&g.env_thresh_fsh, deko_env2tex_thresh_fsh, deko_env2tex_thresh_fsh_len) ||
         !deko_load_shader(&g.flat_vsh, deko_flat_vsh, deko_flat_vsh_len) ||
         !deko_load_shader(&g.flat_fsh, deko_flat_fsh, deko_flat_fsh_len) ||
         !deko_load_shader(&g.sky_fsh, deko_sky_fsh, deko_sky_fsh_len) ||
+        !deko_load_shader(&g.tex0_noise_fsh, deko_tex0_noise_fsh, deko_tex0_noise_fsh_len) ||
+        !deko_load_shader(&g.tex0_noise_edge_fsh, deko_tex0_noise_edge_fsh, deko_tex0_noise_edge_fsh_len) ||
         !deko_load_shader(&g.tex0_fsh, deko_tex0_fsh, deko_tex0_fsh_len) ||
         !deko_load_shader(&g.texmix_fsh, deko_texmix_fsh, deko_texmix_fsh_len)) {
         sysLogPrintf(LOG_ERROR, "deko3d: DKSH load failed");
@@ -297,6 +310,19 @@ static bool deko_gpu_init(uint32_t width, uint32_t height)
         sysLogPrintf(LOG_WARNING, "deko3d: upload staging failed; textures stay pitch-linear without mips");
     }
     g.staging_used = 0;
+
+    /* Per-frame shader parameters for the RDP noise dither: frame_count and
+     * the noise grid scale, mirroring GL's uniforms. deko3d memblocks must be
+     * DK_MEMBLOCK_ALIGNMENT sized. */
+    dkMemBlockMakerDefaults(&memory_maker, g.device, DK_MEMBLOCK_ALIGNMENT);
+    memory_maker.flags = DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached;
+    g.ubo_mem = dkMemBlockCreate(&memory_maker);
+    if (!g.ubo_mem) {
+        sysLogPrintf(LOG_WARNING, "deko3d: noise uniform buffer failed; noise dither stays inert");
+    }
+    g.ubo_addr = g.ubo_mem ? dkMemBlockGetGpuAddr(g.ubo_mem) : 0;
+    g.frame_count = 0;
+    g.noise_scale = 1.0f / 3.0f; /* 720p window, NTSC 240-line game grid */
 
     sysLogPrintf(LOG_NOTE, "deko3d: command memory %u bytes", (unsigned)GE_DEKO_CMD_BYTES);
     const uint32_t image_desc_bytes = GE_DEKO_MAX_TEXTURES * (uint32_t)sizeof(DkImageDescriptor);
@@ -471,6 +497,7 @@ static struct ShaderProgram *deko_create_shader(uint64_t id0, uint32_t id1)
         !(features.do_single[1][1] && features.c[1][1][3] == SHADER_1);
     program->texedge = features.opt_texture_edge;
     program->alpha_threshold = features.opt_alpha_threshold;
+    program->noise = features.opt_noise;
     /* src/game/sky.c: (SHADE, ENVIRONMENT, TEXEL0, ENVIRONMENT) in both
      * cycles, one texture, no fog. Fast3D numbers SHADE as input 1 and
      * ENVIRONMENT as input 2. The raw-texture fallback ignores the env/shade
@@ -492,12 +519,13 @@ static struct ShaderProgram *deko_create_shader(uint64_t id0, uint32_t id1)
         program->supported = program->tex0_fallback || program->texmix_fallback;
     }
     if (g.programs <= 8 || program->supported) {
-        sysLogPrintf(LOG_NOTE, "deko3d: shader %016llx:%08x inputs=%u tex=%u:%u fogtex=%d env=%d flat=%d ac=%d sky=%d supported=%d",
+        sysLogPrintf(LOG_NOTE, "deko3d: shader %016llx:%08x inputs=%u tex=%u:%u fogtex=%d env=%d flat=%d ac=%d sky=%d noise=%d supported=%d",
                      (unsigned long long)id0, id1, program->num_inputs,
                      program->used_textures[0] ? 1u : 0u, program->used_textures[1] ? 1u : 0u,
                      program->fogtex ? 1 : 0, program->env2tex ? 1 : 0,
                      program->flat ? 1 : 0, program->alpha_combiner ? 1 : 0,
-                     program->sky ? 1 : 0, program->supported ? 1 : 0);
+                     program->sky ? 1 : 0, program->noise ? 1 : 0,
+                     program->supported ? 1 : 0);
     }
     return deko_as_handle(program);
 }
@@ -1079,7 +1107,10 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
             t1 = t0;
         }
         DkShader const *shaders[2] = {&g.env_vsh,
-            g.current->texmix_fallback ? &g.texmix_fsh : &g.tex0_fsh};
+            g.current->texmix_fallback ? &g.texmix_fsh
+            : (g.current->noise
+                   ? (g.current->texedge ? &g.tex0_noise_edge_fsh : &g.tex0_noise_fsh)
+                   : &g.tex0_fsh)};
         dkCmdBufBindShaders(g.cmd, DkStageFlag_GraphicsMask, shaders, 2);
         dkCmdBufBindTexture(g.cmd, DkStage_Fragment, 0, dkMakeTextureHandle(t0 - 1, t0 - 1));
         if (g.current->texmix_fallback) {
@@ -1151,7 +1182,9 @@ static void deko_draw_triangles(float *vbo, size_t vbo_len, size_t triangles)
         }
         DkShader const *shaders[2] = {&g.env_vsh, &g.env_fsh};
         if (g.current->alpha_combiner) {
-            if (g.current->alpha_threshold) {
+            if (g.current->noise) {
+                shaders[1] = g.current->texedge ? &g.env_edge_noise_fsh : &g.env_alpha_noise_fsh;
+            } else if (g.current->alpha_threshold) {
                 shaders[1] = &g.env_thresh_fsh;
             } else if (g.current->texedge) {
                 shaders[1] = &g.env_edge_fsh;
@@ -1212,6 +1245,14 @@ static void deko_api_start_frame(void)
     }
     g.retired_count = 0;
     g.staging_used = 0;
+    g.frame_count++;
+    if (g.ubo_mem) {
+        struct { int frame_count; float noise_scale; float pad[2]; } params = {
+            (int)g.frame_count, g.noise_scale, {0.0f, 0.0f}
+        };
+        memcpy(dkMemBlockGetCpuAddr(g.ubo_mem), &params, sizeof(params));
+        dkCmdBufBindUniformBuffer(g.cmd, DkStage_Fragment, 0, g.ubo_addr, 16);
+    }
     g.draws = 0;
     g.skipped = 0;
     dkCmdBufBindImageDescriptorSet(g.cmd, g.image_desc_gpu, GE_DEKO_MAX_TEXTURES);
@@ -1252,7 +1293,11 @@ static void deko_update_framebuffer(int fb_id, uint32_t width, uint32_t height, 
 
 static bool deko_start_draw_to_framebuffer(int fb_id, float noise_scale)
 {
-    (void)noise_scale;
+    /* GL stores 1/noise_scale and feeds it to the noise hash so the dither
+     * grid matches the game's native resolution (see gfx_opengl.cpp). */
+    if (noise_scale != 0.0f) {
+        g.noise_scale = 1.0f / noise_scale;
+    }
     return fb_id == 0 || fb_id == 1;
 }
 
@@ -1378,6 +1423,7 @@ static void wm_close(void)
     if (g.cmd_mem) { dkMemBlockDestroy(g.cmd_mem); g.cmd_mem = nullptr; }
     if (g.vertex_mem) { dkMemBlockDestroy(g.vertex_mem); g.vertex_mem = nullptr; }
     if (g.staging_mem) { dkMemBlockDestroy(g.staging_mem); g.staging_mem = nullptr; }
+    if (g.ubo_mem) { dkMemBlockDestroy(g.ubo_mem); g.ubo_mem = nullptr; }
     for (uint32_t i = 0; i < g.retired_count; ++i) {
         dkMemBlockDestroy(g.retired_mem[i]);
     }

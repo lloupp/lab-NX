@@ -40,9 +40,21 @@ the facility are visible in `stage3-full-dam-textured.png`.
   the canyon cliffs lose the large moiré pattern
   (`stage8-mips-dam-wall.png`, `stage8-mips-cliffs.png`; the pre-mip build's
   aliasing is visible in `stage7-mips-off-cliffs.png`).
+- **Stage 9:** RDP noise dither (`AC_DITHER`). A per-frame UBO carries
+  `frame_count`/`noise_scale`; four fragment variants mirror the GL
+  `random(floor(gl_FragCoord.xy * noise_scale), frame_count)` for dithered
+  discard and alpha modulation, on both the one-texture fallbacks and the
+  2-texture alpha combiner. The 21-level sweep (`/tmp/ge-noise-sweep`,
+  outside Git) found no profile with AC_DITHER set, so the path is dormant
+  in the tested content.
+- `data/boot_level.txt` overrides the hardcoded Dam boot (one `-level_XX`);
+  used to exercise Surface 1/2, Jungle, Streets, Statue, Cradle, Aztec and
+  Cuba during the sweep.
 
 ## Evidence
 
+- Stage-9 NRO: 8,331,320 bytes, SHA-256
+  `9dbe60d6eaf7d006a53d04a547cd3ff21f31a72a1dfe00996efb11e4bf0bf337`.
 - Stage-8 NRO: 8,323,128 bytes, SHA-256
   `b0958ffe124ff12f1e6eb7bb111d15d3ca78f6cc342ca84973db7020bca8eae0`.
 - Stage-6 NRO: 8,319,032 bytes, SHA-256
@@ -50,6 +62,11 @@ the facility are visible in `stage3-full-dam-textured.png`.
 - Patched deko3d (dekotools MME upload): SHA-256
   `64313be5813cffbdb59a3ba3fe356963c98737206b43cb0407b66782b7fc3155`.
   The stock devkitPro `libdeko3d.a` fails at `dkQueueCreate` in Eden.
+- `stage9-noise-dam.png`: Dam with the per-frame noise UBO bound (the game
+  renders unchanged; no profile sets AC_DITHER).
+- `stage9-acdither-sweep.txt`: 21-level sweep result, no AC_DITHER profiles.
+- `stage9-noise-forced-log.txt`: diagnostic build forcing noise on the
+  alpha-combiner profiles; the `noise=1` shader selection is exercised.
 - `stage8-mips-dam-wall.png`: Dam flyover with the wall smooth (no moiré).
 - `stage8-mips-cliffs.png`: canyon cliffs and grating with the mip chain.
 - `stage7-mips-off-cliffs.png`: the same style of canyon view before mipmaps,
@@ -86,8 +103,7 @@ See `docs/GOLDENEYE_DEKO_BACKEND_STAGE1.md` for architecture and next steps.
 
 ## Remaining work
 
-- Noise dither path not implemented; no-texture combiner variant
-  `d000d00010001000:13` is skipped.
+- No-texture combiner variant `d000d00010001000:13` is skipped.
 - MSAA is forced to 1; the `different_size` path is not exercised.
 - Input, audio and mission completion were not re-validated under the deko
   backend; the GL path remains the reference.
