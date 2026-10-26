@@ -9,6 +9,10 @@ on:
       - 'cmake/goldeneye-switch.cmake'
       - 'nxlab/switch_engine_runtime/**'
       - 'nxlab/switch_engine_probe/**'
+      - 'nxlab/deko_backend/**'
+      - 'nxlab/switch_deko_smoke/**'
+      - 'nxlab/native/goldeneye_fast3d_bridge.*'
+      - 'scripts/build_goldeneye_deko_compat.py'
       - 'scripts/build_goldeneye_native_engine.py'
       - 'patches/goldeneye-pc-port/**'
       - 'tests/native/test_goldeneye_portal_bounds.py'
@@ -43,3 +47,34 @@ jobs:
         with:
           name: goldeneye-full-engine-build-manifest-no-gameplay
           path: engine-build-manifest.json
+
+  deko3d-engine-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build MME-patched deko3d and the complete engine deko backend
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work -e DEVKITPRO=/opt/devkitpro \
+            devkitpro/devkita64:20260219 bash -ec '
+              apt-get update -qq
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake ninja-build meson flex bison
+              git clone --depth 1 https://github.com/jkdansereau/goldeneye-pc-port /tmp/ge-upstream
+              git -C /tmp/ge-upstream fetch --depth 1 origin fda76b69837e6c5aae436e0d3e798989e49b06d2
+              git -C /tmp/ge-upstream checkout --detach FETCH_HEAD
+              python3 scripts/build_goldeneye_deko_compat.py \
+                --work-dir /tmp/ge-deko --upstream /tmp/ge-upstream
+              python3 scripts/build_goldeneye_native_engine.py \
+                --work-dir /tmp/ge-engine-deko --source /tmp/ge-upstream \
+                --jobs 2 --deko3d --deko-lib /tmp/ge-deko/deko3d/lib/libdeko3d.a
+              cat /tmp/ge-engine-deko/build-manifest.json
+              grep -F "deko3d_backend_enabled" /tmp/ge-engine-deko/build-manifest.json
+              grep -E "renderer.*deko3d" /tmp/ge-engine-deko/build-manifest.json
+              /opt/devkitpro/devkitA64/bin/aarch64-none-elf-strings /tmp/ge-engine-deko/build/ge007.aarch64 | grep -F "deko3d: device/swapchain/queue ready"
+              cp /tmp/ge-engine-deko/build-manifest.json /work/deko-build-manifest.json
+            '
+      # The full engine embeds upstream compiled asset arrays: manifest only.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldeneye-deko-engine-build-manifest-no-gameplay
+          path: deko-build-manifest.json

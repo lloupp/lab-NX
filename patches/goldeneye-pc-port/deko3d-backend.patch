@@ -1,0 +1,75 @@
+--- a/port/src/video.c
++++ b/port/src/video.c
+@@ -37,6 +37,10 @@
+ #include "../fast3d/gfx_sdl.h"
+ #include "../fast3d/gfx_opengl.h"
+ 
++#ifdef GE_DEKO3D_BACKEND
++#include "../fast3d/gfx_deko3d.h"
++#endif
++
+ /* GE's internal resolution before the game's first osViSetMode (which then
+  * sets the real CFB size): NTSC 640x480; PAL is taller, not shorter -- the EU
+  * game renders 320x269 at 50 Hz with no borders (TCRF), so 2x = 640x538 (D487). */
+@@ -1028,8 +1032,13 @@
+         videoApplyPreset(VIDEO_PRESET_PORT);
+     }
+ 
++#ifdef GE_DEKO3D_BACKEND
++    wmAPI = &gfx_deko3d_wm;
++    renderingAPI = &gfx_deko3d_api;
++#else
+     wmAPI = &gfx_sdl;
+     renderingAPI = &gfx_opengl_api;
++#endif
+ 
+     gfx_current_native_viewport.width = GE_NATIVE_W;
+     gfx_current_native_viewport.height = GE_NATIVE_H;
+@@ -1040,6 +1049,10 @@
+     /* MSAA: snap the requested sample count down to a supported power of two. */
+     gfx_msaa_level = cfgMSAA >= 16 ? 16 : cfgMSAA >= 8 ? 8 : cfgMSAA >= 4 ? 4 : cfgMSAA >= 2 ? 2 : 1;
+ 
++#ifdef GE_DEKO3D_BACKEND
++    gfx_msaa_level = 1;
++#endif
++
+ #ifdef __SWITCH__
+     /* Eden's Mesa/nouveau path presents up to 4x; 8x and 16x render into a
+      * multisample target that never reaches the window. Clamp instead of
+@@ -1105,7 +1118,9 @@
+      * scheduler thread re-binds it per frame via gfx_sdl_make_context_current()
+      * (see videoStartFrame). Must come after set_swap_interval above, which
+      * still needs a current context on this thread. */
++#ifndef GE_DEKO3D_BACKEND
+     gfx_sdl_release_context();
++#endif
+ 
+     gfx_pre_swap_hook = videoPreSwapCapture;
+ 
+@@ -1239,7 +1254,9 @@
+     /* Rendering runs on the D481 render worker (or the scheduler thread with
+      * GE_RENDERINLINE/GE_DETERM); the GL context was created on the host
+      * main thread. */
++#ifndef GE_DEKO3D_BACKEND
+     gfx_sdl_make_context_current();
++#endif
+ 
+     int dirty = SDL_AtomicSet(&liveCfgDirty, 0);
+     if (dirty) {
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -410,6 +410,14 @@
+     set(EXTRA_LIBRARIES stdc++ m dl pthread)
+   endif()
+ endif()
++if(GE_DEKO3D)
++  add_compile_definitions(GE_DEKO3D_BACKEND=1)
++  if(GE_DEKO3D_LIBRARY)
++    list(APPEND EXTRA_LIBRARIES ${GE_DEKO3D_LIBRARY})
++  else()
++    list(APPEND EXTRA_LIBRARIES deko3d)
++  endif()
++endif()
+ list(APPEND LIBS "${EXTRA_LIBRARIES}")
+ 
+ # ----------------------------------------------------------------------------
