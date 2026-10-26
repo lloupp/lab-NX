@@ -40,6 +40,10 @@ upload patch. The stock `libdeko3d.a` from devkitPro hits the Eden
 - Stage 5 adds clamp-S/T limits per vertex (generic VBO clamp scalars drive
   UV clamping in the env shaders) and texedge/alpha-threshold fragment
   variants (`discard` at 0.5 or 8/256).
+- Stage 6 binds `DkBlendState` (alpha-blended surfaces were black) and adds
+  texture fallbacks for the remaining unsupported profiles; the sky/backdrop
+  hole is filled. Aerial re-check: `stage6-aerial-confirmed.png` has no
+  clear-colour pixels in the top region.
 - Depth (`Z24S8`, `LEQUAL`) and a clamped scissor: Fast3D can pass negative
   scissor rectangles, and `DkScissor` is unsigned, so the rectangle is clamped
   to the framebuffer before recording.
